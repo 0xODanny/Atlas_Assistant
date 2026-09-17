@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Atlas
 
-## Getting Started
+Temporary internal working name for a personal calendar, organizer, and AI assistant.
 
-First, run the development server:
+The visible product name lives in `lib/config.ts` as `APP_DISPLAY_NAME`.
+
+V0 is a website, installable PWA, and Telegram Mini App shell. Data is local and mocked. No paid services, bots, or credentials.
+
+## Requirements
+
+- Node 20
+
+## Local development
 
 ```bash
+cd /Users/Daniel/Code/atlas
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Dev server for this workspace: [http://localhost:3002](http://localhost:3002). `npm run dev` defaults to 3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## OpenAI (local)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Copy `.env.example` to `.env.local` and set `OPENAI_API_KEY`. The key stays server-side and is gitignored.
 
-## Learn More
+- Key present: `/api/assistant` uses the live model. Failures do not fall back to the local classifier.
+- Key absent: Atlas keeps running with the deterministic local path.
 
-To learn more about Next.js, take a look at the following resources:
+Settings shows **OpenAI — Connected** or **OpenAI — Not configured**.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Checks
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
 
-## Deploy on Vercel
+## Routes
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `/today`
+- `/calendar`
+- `/assistant`
+- `/brief`
+- `/settings`
+- `/events/[id]`
+- `POST /api/assistant`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Notes
+
+- Calendar create/edit/delete is local and persisted in `localStorage`.
+- The assistant inspects the local calendar context and proposes changes. Apply them in the UI.
+- The assistant proposes changes only. Apply them in the UI. Google, iCloud, Telegram bot, weather, auth, and recording are not connected.

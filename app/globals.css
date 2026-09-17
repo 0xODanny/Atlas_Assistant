@@ -1,8 +1,27 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #12110e;
+  --foreground: #f4efe6;
+  --muted: #9a9286;
+  --line: rgba(244, 239, 230, 0.1);
+  --surface: #1b1915;
+  --accent: #d8c3a0;
+  --cat-meeting: #8fa4c8;
+  --cat-work: #9aa3b5;
+  --cat-training: #c4845a;
+  --cat-focus: #d4b05a;
+  --cat-travel: #6ea3a3;
+  --cat-personal: #c4b8ae;
+  --tg-safe-top: 0px;
+  --tg-safe-bottom: 0px;
+  --tg-safe-left: 0px;
+  --tg-safe-right: 0px;
+  --atlas-bottom-nav-height: 5.25rem;
+  --atlas-bottom-gap: 1.75rem;
+  --atlas-bottom-inset: calc(
+    var(--atlas-bottom-nav-height) + var(--atlas-bottom-gap) + env(safe-area-inset-bottom) + var(--tg-safe-bottom, 0px)
+  );
 }
 
 @theme inline {
@@ -12,15 +31,162 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--background);
+  scroll-padding-bottom: var(--atlas-bottom-inset);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  min-height: 100dvh;
+}
+
+.display-title {
+  font-family: var(--font-display), ui-serif, Georgia, serif;
+  font-size: clamp(2rem, 4.6vw, 2.75rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.section-kicker {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.btn-quiet,
+.btn-solid {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 13px;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 14px;
+}
+
+@media (min-width: 768px) {
+  .btn-quiet,
+  .btn-solid {
+    min-height: 36px;
+    padding: 0 12px;
+  }
+}
+
+.btn-quiet {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--foreground);
+}
+
+.btn-solid {
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.btn-solid:disabled {
+  opacity: 0.45;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.field input,
+.field select,
+.field textarea,
+input[type="text"],
+input:not([type]),
+input[type="date"],
+input[type="time"],
+input[type="number"],
+textarea,
+select {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--foreground);
+  font-size: 16px;
+  min-height: 44px;
+  padding: 0.4rem 0;
+  width: 100%;
+}
+
+textarea {
+  min-height: 5.5rem;
+  resize: vertical;
+}
+
+.control-bar {
+  align-items: center;
+  column-gap: 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 0.75rem;
+}
+
+.control-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+@media (max-width: 480px) {
+  .control-group {
+    flex: 1 1 100%;
+  }
+}
+
+.scan-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .scan-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+  }
+}
+
+.assistant-workspace {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+@media (max-width: 767px) {
+  .assistant-workspace {
+    min-height: calc(100% - 0px);
+  }
+}
+
+[data-atlas-main] {
+  scroll-padding-bottom: var(--atlas-bottom-inset);
+}
+
+@media (min-width: 768px) {
+  .assistant-workspace {
+    height: calc(100dvh - 5.5rem);
+  }
+}
+
+.sr-only {
+  border: 0;
+  clip: rect(0 0 0 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  width: 1px;
 }
