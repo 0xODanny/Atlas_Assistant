@@ -250,12 +250,25 @@ test("assistant composer keeps focus on the outer pill and includes a microphone
   const chat = readFileSync(join(ROOT, "components/assistant/AssistantChat.tsx"), "utf8");
   const hook = readFileSync(join(ROOT, "lib/hooks/useSpeechDictation.ts"), "utf8");
   assert.match(css, /\.composer-shell:focus-within/);
-  assert.match(css, /\.composer-shell input:focus-visible[\s\S]*outline:\s*none/);
+  assert.match(css, /\.composer-shell textarea:focus-visible[\s\S]*outline:\s*none/);
+  assert.match(css, /\.composer-input[\s\S]*max-height:\s*calc\(1\.45em \* 4/);
+  assert.match(css, /\.composer-controls[\s\S]*flex:\s*0 0 auto/);
+  assert.match(chat, /<textarea/);
+  assert.match(chat, /className="composer-input"/);
+  assert.match(chat, /composer-controls/);
+  assert.match(css, /\.composer-input[\s\S]*overflow-x:\s*hidden/);
+  assert.match(css, /\.composer-input[\s\S]*min-width:\s*0/);
   assert.match(chat, /composer-mic/);
   assert.match(chat, /Dictate/);
   assert.match(chat, /Voice input isn’t supported in this browser/);
+  assert.match(chat, /Waiting for microphone access/);
+  assert.doesNotMatch(chat, /placeholder=\{dictation\.listening \? "Listening/);
   assert.match(hook, /webkitSpeechRecognition|SpeechRecognition/);
   assert.match(hook, /not-allowed/);
+  assert.match(hook, /requesting-permission/);
+  assert.match(hook, /onstart/);
+  assert.match(hook, /setStatus\("listening"\)/);
+  assert.doesNotMatch(hook, /recognition\.start\(\);\s*setStatus\("listening"\)/);
 });
 
 test("settings groups existing controls without dropping values", () => {

@@ -19,6 +19,7 @@ import { findFreeTime } from "./freeTime";
 import { resolveScheduleHours } from "./hours";
 import { firstSnappedSlot, snapZonedDate } from "./snap";
 import { planningConflicts, planningFreeTimeOptions, resolveAfterWorkoutBufferMinutes } from "./transitionBuffer";
+import { hasHardTemporalBound } from "../assistant/parseSchedule";
 import { clipRangeToNow, resolveAnchorDay, resolveExactStart, resolveSearchRange } from "../assistant/resolveTime";
 
 export const SUGGESTED_WORKOUT_DURATION_MINUTES = 60;
@@ -231,6 +232,7 @@ export function recommendWorkoutSlots(input: {
   when?: TimeHint;
   sport?: Sport;
   limit?: number;
+  relaxHours?: boolean;
 }): WorkoutSlotOption[] {
   const { now, timezone, profile, events, workouts, duration } = input;
   const pref = workoutSchedulePreference(profile, input.sport);
@@ -252,7 +254,14 @@ export function recommendWorkoutSlots(input: {
     },
     now,
   );
-  const searchEnd = range.end.getTime() <= range.start.getTime() ? addDays(range.start, 1) : range.end;
+  const hardBound = hasHardTemporalBound(input.when);
+  const searchEnd =
+    range.end.getTime() <= range.start.getTime()
+      ? hardBound
+        ? range.end
+        : addDays(range.start, 1)
+      : range.end;
+  if (hardBound && searchEnd.getTime() <= range.start.getTime()) return [];
   const windows = findFreeTime({
     start: laterInstant(range.start, availabilitySearchStart(now, timezone)),
     end: searchEnd,
@@ -260,7 +269,7 @@ export function recommendWorkoutSlots(input: {
     events,
     timezone,
     workingHours: resolveScheduleHours(profile, "workout"),
-    useWorkingHours: input.when?.part !== "morning" && input.when?.part !== "evening" && input.when?.part !== "afternoon",
+    useWorkingHours: !input.relaxHours,
     ...planningFreeTimeOptions(profile, workouts),
   });
 
@@ -281,6 +290,14 @@ export function recommendWorkoutSlots(input: {
       const slot = firstSnappedSlot(startDate.toISOString(), window.end, duration.minutes, timezone);
       if (!slot) continue;
       if (new Date(slot.start).getTime() < now.getTime()) continue;
+      if (hardBound && new Date(slot.start).getTime() >= rawRange.end.getTime()) continue;
+      if (
+        hardBound &&
+        input.when?.bound !== "week" &&
+        !sameZonedDay(new Date(slot.start), resolveAnchorDay(input.when, timezone, now), timezone)
+      ) {
+        continue;
+      }
       if (planningConflicts(slot.start, slot.end, events, planning)) continue;
       const hour = zonedParts(timezone, new Date(slot.start)).hour;
       const part = partOfHour(hour);

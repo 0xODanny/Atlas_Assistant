@@ -6,6 +6,8 @@ type SpeechRecognitionLike = {
   lang: string;
   continuous: boolean;
   interimResults: boolean;
+  onstart: (() => void) | null;
+  onaudiostart: (() => void) | null;
   onresult: ((event: SpeechRecognitionEventLike) => void) | null;
   onerror: ((event: { error?: string }) => void) | null;
   onend: (() => void) | null;
@@ -21,7 +23,14 @@ type SpeechRecognitionEventLike = {
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 
-export type SpeechDictationStatus = "idle" | "listening" | "unsupported" | "denied" | "error";
+export type SpeechDictationStatus =
+  | "idle"
+  | "requesting-permission"
+  | "listening"
+  | "processing"
+  | "unsupported"
+  | "denied"
+  | "error";
 
 function speechRecognitionCtor(): SpeechRecognitionCtor | undefined {
   if (typeof window === "undefined") return undefined;
@@ -44,6 +53,7 @@ export function useSpeechDictation(onTranscript: (text: string) => void) {
   const onTranscriptRef = useRef(onTranscript);
   onTranscriptRef.current = onTranscript;
   const baseRef = useRef("");
+  const startedRef = useRef(false);
 
   const stop = useCallback(() => {
     const recognition = recognitionRef.current;
@@ -53,7 +63,11 @@ export function useSpeechDictation(onTranscript: (text: string) => void) {
     } catch {
       recognition?.abort();
     }
-    setStatus((current) => (current === "listening" ? "idle" : current));
+    setStatus((current) => {
+      if (current === "listening") return "processing";
+      if (current === "requesting-permission") return "idle";
+      return current;
+    });
   }, []);
 
   useEffect(() => () => stop(), [stop]);
@@ -67,11 +81,32 @@ export function useSpeechDictation(onTranscript: (text: string) => void) {
       }
       stop();
       baseRef.current = currentText.trim();
+      startedRef.current = false;
+      setStatus("requesting-permission");
+
+      if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach((track) => track.stop());
+        } catch {
+          setStatus("denied");
+          return;
+        }
+      }
+
       const recognition = new Ctor();
       recognition.lang = typeof navigator !== "undefined" ? navigator.language || "en-US" : "en-US";
       recognition.continuous = true;
       recognition.interimResults = true;
+      const markListening = () => {
+        if (recognitionRef.current !== recognition) return;
+        startedRef.current = true;
+        setStatus("listening");
+      };
+      recognition.onstart = markListening;
+      recognition.onaudiostart = markListening;
       recognition.onresult = (event) => {
+        if (!startedRef.current) markListening();
         let finalText = "";
         let interim = "";
         for (let index = event.resultIndex; index < event.results.length; index += 1) {
@@ -96,13 +131,18 @@ export function useSpeechDictation(onTranscript: (text: string) => void) {
       recognition.onend = () => {
         if (recognitionRef.current === recognition) {
           recognitionRef.current = null;
-          setStatus((current) => (current === "listening" ? "idle" : current));
+          setStatus((current) =>
+            current === "listening" || current === "processing" || current === "requesting-permission"
+              ? "idle"
+              : current,
+          );
+        } else {
+          setStatus((current) => (current === "processing" ? "idle" : current));
         }
       };
       recognitionRef.current = recognition;
       try {
         recognition.start();
-        setStatus("listening");
       } catch (error) {
         recognitionRef.current = null;
         const name = error instanceof DOMException ? error.name : "";
@@ -114,7 +154,7 @@ export function useSpeechDictation(onTranscript: (text: string) => void) {
 
   const toggle = useCallback(
     (currentText: string) => {
-      if (status === "listening") {
+      if (status === "listening" || status === "requesting-permission" || status === "processing") {
         stop();
         return;
       }
@@ -127,6 +167,7 @@ export function useSpeechDictation(onTranscript: (text: string) => void) {
     status,
     supported: status !== "unsupported" && isSpeechRecognitionSupported(),
     listening: status === "listening",
+    requesting: status === "requesting-permission",
     toggle,
     stop,
   };

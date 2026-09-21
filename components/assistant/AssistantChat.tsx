@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ASSISTANT_PRIMARY_CHIPS } from "@/lib/assistant/chips";
 import { resolveChoiceFromText } from "@/lib/assistant/followUp";
@@ -40,6 +40,7 @@ export function AssistantChat() {
   const [showHistory, setShowHistory] = useState(false);
   const [workspace, setWorkspace] = useState<AssistantWorkspace>(emptyWorkspace);
   const dictation = useSpeechDictation(setInput);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
   const visualMode = useVisualMode();
@@ -123,6 +124,7 @@ export function AssistantChat() {
         actions: data.actions ?? [],
         intentType: data.intentType,
         choices: data.choices,
+        followUps: data.followUps,
         selectedChoiceId: data.choices?.[0]?.id,
         pending: data.pending,
         resume: data.resume,
@@ -175,6 +177,24 @@ export function AssistantChat() {
 
   function selectChoice(choice: AssistantChoice) {
     applyChoice(choice);
+  }
+
+  useLayoutEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const max = 16 * 1.45 * 4 + 18;
+    el.style.height = `${Math.min(el.scrollHeight, max)}px`;
+  }, [input]);
+
+  function composerPlaceholder() {
+    if (dictation.status === "requesting-permission") return "Waiting for microphone…";
+    if (dictation.listening) return "Listening…";
+    return "Ask Atlas anything…";
+  }
+
+  function isCoarsePointer() {
+    return typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
   }
 
   return (
@@ -257,6 +277,13 @@ export function AssistantChat() {
                 end: addMinutes(start, minutes).toISOString(),
               });
             }}
+            onFollowUp={(followUp) => {
+              if (followUp.href) {
+                router.push(followUp.href);
+                return;
+              }
+              if (followUp.text) void send(followUp.text, true);
+            }}
             onBrowse={(kind, date) => {
               if (kind === "more") void send("more times", true);
               else if (kind === "next_week") void send("next week", true);
@@ -314,26 +341,37 @@ export function AssistantChat() {
           Message
         </label>
         <div className="composer-shell">
-          <input
+          <textarea
             id="assistant-input"
+            ref={composerRef}
+            className="composer-input"
+            rows={1}
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder={dictation.listening ? "Listening…" : "Ask Atlas anything…"}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+              if (isCoarsePointer()) return;
+              event.preventDefault();
+              void send(input, true);
+            }}
+            placeholder={composerPlaceholder()}
             disabled={pending}
           />
-          <button
-            type="button"
-            className={`composer-mic${dictation.listening ? " is-listening" : ""}`}
-            aria-label={dictation.listening ? "Stop voice input" : "Dictate"}
-            aria-pressed={dictation.listening}
-            disabled={pending || dictation.status === "unsupported"}
-            onClick={() => dictation.toggle(input)}
-          >
-            <MicIcon />
-          </button>
-          <button type="submit" className="composer-send" disabled={pending} aria-label="Send">
-            →
-          </button>
+          <div className="composer-controls">
+            <button
+              type="button"
+              className={`composer-mic${dictation.listening ? " is-listening" : ""}`}
+              aria-label={dictation.listening ? "Stop voice input" : "Dictate"}
+              aria-pressed={dictation.listening}
+              disabled={pending || dictation.status === "unsupported"}
+              onClick={() => dictation.toggle(input)}
+            >
+              <MicIcon />
+            </button>
+            <button type="submit" className="composer-send" disabled={pending} aria-label="Send">
+              →
+            </button>
+          </div>
         </div>
         {dictation.status === "unsupported" ? (
           <p className="composer-voice-note">Voice input isn’t supported in this browser.</p>
@@ -341,6 +379,10 @@ export function AssistantChat() {
           <p className="composer-voice-note">Microphone access was denied. You can still type.</p>
         ) : dictation.status === "error" ? (
           <p className="composer-voice-note">Voice input couldn’t start. Try again or type instead.</p>
+        ) : dictation.status === "requesting-permission" ? (
+          <p className="composer-voice-note">Waiting for microphone access…</p>
+        ) : dictation.status === "processing" ? (
+          <p className="composer-voice-note">Finishing voice input…</p>
         ) : dictation.listening ? (
           <p className="composer-voice-note">Listening… tap the microphone to stop.</p>
         ) : null}

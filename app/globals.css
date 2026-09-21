@@ -657,10 +657,10 @@ textarea {
 }
 
 .composer-shell {
-  align-items: center;
+  align-items: flex-end;
   background: var(--atlas-surface);
   border: 1px solid var(--atlas-line);
-  border-radius: 999px;
+  border-radius: 1.75rem;
   box-shadow: 0 8px 20px rgba(20, 20, 22, 0.06);
   display: flex;
   gap: 0.45rem;
@@ -673,6 +673,9 @@ textarea {
   box-shadow: 0 0 0 2px rgba(62, 28, 56, 0.16), 0 8px 20px rgba(20, 20, 22, 0.06);
 }
 
+.composer-shell textarea,
+.composer-shell textarea:focus,
+.composer-shell textarea:focus-visible,
 .composer-shell input,
 .composer-shell input:not([type]),
 .composer-shell input[type="text"],
@@ -685,12 +688,33 @@ textarea {
   appearance: none;
   background: transparent;
   border: 0;
+  border-bottom: 0;
   border-radius: 0;
   box-shadow: none;
   font-size: 16px;
+  line-height: 1.45;
   min-height: 44px;
   outline: none;
-  padding: 0;
+  padding: 0.55rem 0;
+}
+
+.composer-input {
+  display: block;
+  flex: 1 1 auto;
+  max-height: calc(1.45em * 4 + 1.1rem);
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  resize: none;
+  width: auto;
+}
+
+.composer-controls {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.15rem;
+  padding-bottom: 0.15rem;
 }
 
 .composer-mic {

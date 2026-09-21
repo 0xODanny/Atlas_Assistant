@@ -27,8 +27,7 @@ export function resolveAnchorDay(hint: TimeHint | undefined, timezone: string, n
   if (hint.day === "tomorrow") return addDays(today, 1);
   if (hint.day === "weekday" && hint.weekday !== undefined) {
     const current = zonedParts(timezone, today).weekday;
-    let delta = (hint.weekday - current + 7) % 7;
-    if (delta === 0) delta = 7;
+    const delta = (hint.weekday - current + 7) % 7;
     return addDays(today, delta);
   }
   return today;
@@ -68,18 +67,43 @@ export function resolveSearchRange(
     const start = addDays(today, daysUntilNextMonday);
     return { start, end: addDays(start, 7) };
   }
+  if (hint?.week === "this") {
+    const today = startOfZonedDay(timezone, now);
+    const weekday = zonedParts(timezone, today).weekday;
+    const daysLeft = weekday === 0 ? 1 : 7 - weekday;
+    return { start: today, end: addDays(today, daysLeft) };
+  }
   if (hint?.hour !== undefined) {
     const start = atZonedTime(timezone, day, hint.hour, hint.minute ?? 0);
-    const end = workingHours
-      ? hoursEndInstant(timezone, day, workingHours.end)
-      : atZonedTime(timezone, day, DAY_END_HOUR, 0);
-    return { start, end: end.getTime() > start.getTime() ? end : addMinutes(start, 180) };
+    const end =
+      hint.bound === "tonight" || hint.bound === "today" || hint.bound === "tomorrow"
+        ? hoursEndInstant(timezone, day, "24:00")
+        : workingHours
+          ? hoursEndInstant(timezone, day, workingHours.end)
+          : atZonedTime(timezone, day, DAY_END_HOUR, 0);
+    if (end.getTime() > start.getTime()) return { start, end };
+    return hint.bound ? { start, end } : { start, end: addMinutes(start, 180) };
   }
   if (hint?.part === "later") {
-    const end = workingHours
-      ? hoursEndInstant(timezone, day, workingHours.end)
-      : atZonedTime(timezone, day, DAY_END_HOUR, 0);
+    const end =
+      hint.bound
+        ? hoursEndInstant(timezone, day, "24:00")
+        : workingHours
+          ? hoursEndInstant(timezone, day, workingHours.end)
+          : atZonedTime(timezone, day, DAY_END_HOUR, 0);
     return { start: now, end };
+  }
+  if (hint?.bound === "tonight") {
+    return {
+      start: atZonedTime(timezone, day, 17, 0),
+      end: hoursEndInstant(timezone, day, "24:00"),
+    };
+  }
+  if ((hint?.bound === "today" || hint?.bound === "tomorrow") && !hint.part) {
+    return {
+      start: atZonedTime(timezone, day, DAY_START_HOUR, 0),
+      end: hoursEndInstant(timezone, day, "24:00"),
+    };
   }
   const hours = partHours(hint?.part, workingHours);
   const start =

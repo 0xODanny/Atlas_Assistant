@@ -12,7 +12,8 @@ Interpretation rules:
 - If the user states a clock time (18:00, 18h, 18h00, 6 PM, at 18, from 18h, 18:00 to 18:45), set when.hour/when.minute in 24-hour local time and timingMode=fixed. Do not pick a different free slot.
 - Bare "18h" after at/from, or as HH:MM, is clock time — not an 18-hour duration. Duration only for "duration 18h", "for 18 hours", "an 18-hour event", "18 hours long".
 - Ranges like 18:00 to 18:45 also set when.endHour/when.endMinute and durationMinutes=45.
-- timingMode=search for "find me" / "when can I" / "sometime". timingMode=flexible for "around" / "preferably".
+- timingMode=search for "find me" / "when can I" / "sometime" / "recommend a time". timingMode=flexible for "around" / "preferably".
+- tonight/today/tomorrow/Monday/this evening/this week are hard date bounds. Set when.day/part/bound. Do not move the search to another day.
 - If sport + day/part are known and no clock time was given, do not ask for an exact clock time.
 - Ready/prepare before a named person = prepare_meeting.
 - "What's my next meeting?" = answer topic=next_meeting. Only a future or currently active meeting. Never a past meeting.

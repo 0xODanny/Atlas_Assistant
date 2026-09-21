@@ -72,6 +72,21 @@ export function parseModelIntent(raw: unknown): ParseResult<ModelIntent> {
     if (typeof when.minute === "number") intent.when.minute = when.minute;
     if (typeof when.endHour === "number") intent.when.endHour = when.endHour;
     if (typeof when.endMinute === "number") intent.when.endMinute = when.endMinute;
+    if (when.week === "this" || when.week === "next") intent.when.week = when.week;
+    const bounds = [
+      "today",
+      "tonight",
+      "tomorrow",
+      "morning",
+      "afternoon",
+      "evening",
+      "weekday",
+      "week",
+      "date",
+    ] as const;
+    if (typeof when.bound === "string" && (bounds as readonly string[]).includes(when.bound)) {
+      intent.when.bound = when.bound as (typeof bounds)[number];
+    }
   }
 
   if (intent.type === "clarify" && !intent.question?.trim()) {
@@ -127,7 +142,7 @@ export const MODEL_INTENT_SCHEMA = {
       when: {
         type: ["object", "null"],
         additionalProperties: false,
-        required: ["day", "weekday", "part", "hour", "minute", "endHour", "endMinute"],
+        required: ["day", "weekday", "part", "hour", "minute", "endHour", "endMinute", "week", "bound"],
         properties: {
           day: { type: ["string", "null"], enum: ["today", "tomorrow", "weekday", null] },
           weekday: { type: ["number", "null"] },
@@ -136,6 +151,11 @@ export const MODEL_INTENT_SCHEMA = {
           minute: { type: ["number", "null"] },
           endHour: { type: ["number", "null"] },
           endMinute: { type: ["number", "null"] },
+          week: { type: ["string", "null"], enum: ["this", "next", null] },
+          bound: {
+            type: ["string", "null"],
+            enum: ["today", "tonight", "tomorrow", "morning", "afternoon", "evening", "weekday", "week", "date", null],
+          },
         },
       },
     },

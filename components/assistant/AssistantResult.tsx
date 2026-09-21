@@ -5,7 +5,7 @@ import { splitEditorial } from "@/lib/assistant/editorial";
 import type { AssistantTurn } from "@/lib/assistant/workspace";
 import { eventDurationMinutes, formatDuration, formatRangeCompact, formatRelativeDay } from "@/lib/format";
 import { fromDateAndTimeInputs, toDateInputValue, toTimeInputValue } from "@/lib/time";
-import type { AssistantChoice } from "@/lib/types/assistant";
+import type { AssistantChoice, AssistantFollowUp } from "@/lib/types/assistant";
 import { ActionCard } from "./ActionCard";
 
 export function AssistantResult({
@@ -17,6 +17,7 @@ export function AssistantResult({
   onDurationChange,
   onCustomTime,
   onBrowse,
+  onFollowUp,
   onView,
   onMove,
   applying,
@@ -29,6 +30,7 @@ export function AssistantResult({
   onDurationChange?: (minutes: number) => void;
   onCustomTime?: (start: Date) => void;
   onBrowse?: (kind: "more" | "next_week" | "date", date?: string) => void;
+  onFollowUp?: (followUp: AssistantFollowUp) => void;
   onView?: (eventId: string) => void;
   onMove?: (eventId: string) => void;
   applying?: boolean;
@@ -110,6 +112,21 @@ export function AssistantResult({
               </button>
             );
           })}
+        </div>
+      ) : null}
+
+      {turn.followUps?.length ? (
+        <div className="assistant-alts mt-4">
+          {turn.followUps.map((followUp) => (
+            <button
+              key={followUp.id}
+              type="button"
+              className="btn-quiet"
+              onClick={() => onFollowUp?.(followUp)}
+            >
+              {followUp.label}
+            </button>
+          ))}
         </div>
       ) : null}
 

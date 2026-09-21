@@ -36,15 +36,18 @@ import { nextUpcomingEvent } from "../present/status";
 import { trainingGoalCopy, trainingPriorityReason } from "../present/training";
 import { buildPreparation, linkedMeeting, linkedWorkout, preparationCopy } from "../prepare/content";
 import { addDays, addMinutes, sameZonedDay, startOfZonedDay } from "../time";
-import { sanitizeEventTitle } from "./title";
+import { sanitizeEventTitle, stripDanglingScheduleTokens } from "./title";
 import type {
   AssistantAction,
   AssistantChoice,
   AssistantContext,
+  AssistantFollowUp,
   AssistantResponse,
   ModelIntent,
+  TimeHint,
 } from "../types/assistant";
 import type { CalendarEvent } from "../types/event";
+import type { HourKind } from "../types/profile";
 import type { Sport } from "../types/training";
 import {
   applyDestinationToCreateInput,
@@ -55,7 +58,14 @@ import {
 import { dayEventsFor } from "../calendar/dayAgenda";
 import { buildDaySummaryMessage, calendarReadFailed } from "./daySummary";
 import { capabilityAvailable, capabilityCopy } from "./capabilities";
-import { isFixedTiming, rangeDurationMinutes } from "./parseSchedule";
+import {
+  defaultSearchWhen,
+  describeTemporalBound,
+  hasHardTemporalBound,
+  isFixedTiming,
+  rangeDurationMinutes,
+  searchMayWiden,
+} from "./parseSchedule";
 import { clipRangeToNow, resolveAnchorDay, resolveExactStart, resolveSearchRange } from "./resolveTime";
 
 function createDestination(context: AssistantContext): WriteDestination {
@@ -76,11 +86,43 @@ function eventDestination(event: CalendarEvent, context: AssistantContext): Writ
 }
 
 function createEventTitle(intent: ModelIntent): string {
-  return (
+  const raw =
     sanitizeEventTitle(intent.title, intent.title ?? "") ||
     intent.title?.trim() ||
-    (intent.sport ? intent.sport.charAt(0).toUpperCase() + intent.sport.slice(1) : "Event")
-  );
+    (intent.sport ? intent.sport.charAt(0).toUpperCase() + intent.sport.slice(1) : "Event");
+  return stripDanglingScheduleTokens(raw) || raw;
+}
+
+function proposalAddMessage(title: string, minutes: number, start: string, timezone: string): string {
+  return `I can add ${indefiniteDurationAdjective(minutes)} ${title.toLowerCase()} at ${formatClock(start, timezone)}.`;
+}
+
+function boundNoSlotFollowUps(when: TimeHint | undefined, hoursKind: HourKind): AssistantFollowUp[] {
+  const hoursLabel =
+    hoursKind === "workout" ? "workout hours" : hoursKind === "meeting" ? "meeting hours" : "focus hours";
+  const items: AssistantFollowUp[] = [
+    {
+      id: "outside-hours",
+      label: `Show times outside my ${hoursLabel}`,
+      text: `Show times outside my ${hoursLabel}`,
+    },
+  ];
+  if (
+    when?.bound === "tonight" ||
+    when?.bound === "today" ||
+    when?.bound === "evening" ||
+    when?.bound === "afternoon" ||
+    when?.bound === "morning"
+  ) {
+    items.push({ id: "tomorrow", label: "Try tomorrow", text: "Try tomorrow" });
+  }
+  if (when?.bound === "weekday" || when?.bound === "week") {
+    items.push({ id: "next-week", label: "Try next week", text: "Try next week" });
+  }
+  if (hoursKind === "workout") {
+    items.push({ id: "settings-hours", label: "Change workout hours", href: "/settings" });
+  }
+  return items;
 }
 
 function proposeCreateEvent(
@@ -204,6 +246,7 @@ function fulfillWorkoutCreate(
         duration,
         when: { ...intent.when, hour: undefined, minute: undefined, endHour: undefined, endMinute: undefined },
         sport,
+        relaxHours: intent.relaxHours,
       });
       return {
         intentType: "create_event",
@@ -224,9 +267,7 @@ function fulfillWorkoutCreate(
     }
     return {
       intentType: "create_event",
-      message: `I can add a ${formatDuration(duration.minutes)} ${title.toLowerCase()} ${
-        intent.when?.day === "tomorrow" ? "tomorrow" : ""
-      } at ${formatClock(start, timezone)}.`.replace(/\s+/g, " ").trim(),
+      message: proposalAddMessage(title, duration.minutes, start, timezone),
       actions: [
         proposeCreateEvent(context, {
           title,
@@ -243,6 +284,7 @@ function fulfillWorkoutCreate(
     };
   }
 
+  const when = defaultSearchWhen(intent.when);
   const options = recommendWorkoutSlots({
     now,
     timezone,
@@ -250,14 +292,33 @@ function fulfillWorkoutCreate(
     events: context.events,
     workouts: context.workouts,
     duration,
-    when: intent.when ?? { day: "tomorrow" },
+    when,
     sport,
+    relaxHours: intent.relaxHours,
   });
   if (!options.length) {
+    const hours = resolveScheduleHours(context.profile, "workout");
+    const range = clipRangeToNow(resolveSearchRange(when, timezone, now, hours), now);
+    const diagnosis = diagnoseMissingSlot({
+      start: range.start,
+      end: range.end.getTime() <= range.start.getTime() ? range.start : range.end,
+      durationMinutes: duration.minutes,
+      events: context.events,
+      timezone,
+      hours,
+      useHours: !intent.relaxHours,
+      profile: context.profile,
+      workouts: context.workouts,
+      kindLabel: "workout hours",
+      boundLabel: describeTemporalBound(when.bound),
+      now,
+      bufferMinutes: resolveAfterWorkoutBufferMinutes(context.profile),
+    });
     return {
       intentType: "create_event",
-      message: `I could not find a free ${formatDuration(duration.minutes)} window for that. I can try a different day or a shorter session.`,
+      message: diagnosis.message || `I couldn't find a ${formatDuration(duration.minutes)} opening ${describeTemporalBound(when.bound)} within your workout hours.`,
       actions: [],
+      followUps: hasHardTemporalBound(when) || !intent.relaxHours ? boundNoSlotFollowUps(when, "workout") : [],
       pending,
     };
   }
@@ -592,7 +653,12 @@ export function fulfillIntent(intent: ModelIntent, context: AssistantContext): A
     }
     const durationMinutes = intent.durationMinutes;
     const partner = meetingPartnerName(intent);
-    const hoursKind = partner || /meet/.test(intent.eventHint ?? "") ? "meeting" : "focus";
+    const hoursKind =
+      intent.sport || /workout|train|yoga|pilates|swim|bike|run/.test(`${intent.eventHint ?? ""} ${intent.title ?? ""}`)
+        ? "workout"
+        : partner || /meet/.test(intent.eventHint ?? "")
+          ? "meeting"
+          : "focus";
     const hours = resolveScheduleHours(context.profile, hoursKind);
     const range = clipRangeToNow(resolveSearchRange(intent.when, tz, now, hours), now);
     let end = range.end;
@@ -602,7 +668,9 @@ export function fulfillIntent(intent: ModelIntent, context: AssistantContext): A
         end = new Date(until.start);
       }
     }
-    const useWorkingHours = intent.when?.part !== "morning" && intent.when?.part !== "evening";
+    const useWorkingHours =
+      !intent.relaxHours &&
+      (hoursKind === "workout" || (intent.when?.part !== "morning" && intent.when?.part !== "evening"));
     let windows = findPlanningWindows(context, {
       start: range.start,
       end,
@@ -610,7 +678,7 @@ export function fulfillIntent(intent: ModelIntent, context: AssistantContext): A
       useWorkingHours,
       hoursKind,
     });
-    if (!windows.length && intent.when?.week !== "next" && !intent.when?.hour) {
+    if (!windows.length && searchMayWiden(intent.when) && intent.when?.week !== "next" && !intent.when?.hour) {
       const rest = clipRangeToNow(resolveSearchRange({ day: intent.when?.day, part: "working", week: intent.when?.week }, tz, now, hours), now);
       windows = findPlanningWindows(context, {
         start: rest.start,
@@ -629,7 +697,8 @@ export function fulfillIntent(intent: ModelIntent, context: AssistantContext): A
       limit: 3,
       offset: intent.slotOffset ?? 0,
     });
-    const title = partner ? `Meeting with ${partner}` : "Focus block";
+    const title =
+      partner ? `Meeting with ${partner}` : intent.title ?? (hoursKind === "workout" ? "Workout" : "Focus block");
     const pending: ModelIntent = {
       ...intent,
       title,
@@ -648,12 +717,17 @@ export function fulfillIntent(intent: ModelIntent, context: AssistantContext): A
         useHours: useWorkingHours,
         profile: context.profile,
         workouts: context.workouts,
-        kindLabel: hoursKind === "meeting" ? "meeting hours" : "focus hours",
+        kindLabel:
+          hoursKind === "meeting" ? "meeting hours" : hoursKind === "workout" ? "workout hours" : "focus hours",
+        boundLabel: describeTemporalBound(intent.when?.bound),
+        now,
+        bufferMinutes: resolveAfterWorkoutBufferMinutes(context.profile),
       });
       return {
         intentType: "find_time",
         message: diagnosis.message,
         actions: [],
+        followUps: hasHardTemporalBound(intent.when) ? boundNoSlotFollowUps(intent.when, hoursKind) : [],
         pending,
       };
     }
@@ -809,7 +883,7 @@ export function fulfillIntent(intent: ModelIntent, context: AssistantContext): A
   }
 
   if (intent.type === "create_event") {
-    if (!intent.sport && intent.category === "training") {
+    if (!intent.sport && intent.category === "training" && !intent.title) {
       return {
         intentType: "clarify",
         message: "What kind of training — swim, bike, run, or strength?",
@@ -852,7 +926,7 @@ export function fulfillIntent(intent: ModelIntent, context: AssistantContext): A
       }
       return {
         intentType: "create_event",
-        message: `I can add ${title} at ${formatClock(start, tz)}.`,
+        message: proposalAddMessage(title, durationMinutes, start, tz),
         actions: [
           proposeCreateEvent(context, {
             title,
@@ -866,22 +940,42 @@ export function fulfillIntent(intent: ModelIntent, context: AssistantContext): A
         pending: { ...intent, title, durationMinutes },
       };
     }
-    const range = clipRangeToNow(
-      resolveSearchRange(intent.when ?? { day: "tomorrow" }, tz, now, context.profile.workingHours),
-      now,
-    );
+    const when = defaultSearchWhen(intent.when);
+    const range = clipRangeToNow(resolveSearchRange(when, tz, now, context.profile.workingHours), now);
+    const searchEnd =
+      range.end.getTime() <= range.start.getTime() && searchMayWiden(when)
+        ? addDays(range.start, 1)
+        : range.end;
     const windows = findPlanningWindows(context, {
       start: range.start,
-      end: range.end.getTime() <= range.start.getTime() ? addDays(range.start, 1) : range.end,
+      end: searchEnd,
       durationMinutes,
-      useWorkingHours: intent.when?.part === "working" || !intent.when?.part,
+      useWorkingHours: !intent.relaxHours && (when.part === "working" || !when.part),
     });
     const slot = windows[0];
-    if (!slot) {
+    if (!slot || searchEnd.getTime() <= range.start.getTime()) {
+      const hours = resolveScheduleHours(context.profile, "focus");
+      const diagnosis = diagnoseMissingSlot({
+        start: range.start,
+        end: searchEnd.getTime() <= range.start.getTime() ? range.start : searchEnd,
+        durationMinutes,
+        events: context.events,
+        timezone: tz,
+        hours,
+        useHours: !intent.relaxHours,
+        profile: context.profile,
+        workouts: context.workouts,
+        kindLabel: "focus hours",
+        boundLabel: describeTemporalBound(when.bound),
+        now,
+      });
       return {
         intentType: "create_event",
-        message: `I could not find a free ${formatDuration(durationMinutes)} window for that. I can try a different day or duration.`,
+        message:
+          diagnosis.message ||
+          `I could not find a free ${formatDuration(durationMinutes)} window for that. I can try a different day or duration.`,
         actions: [],
+        followUps: hasHardTemporalBound(when) ? boundNoSlotFollowUps(when, "focus") : [],
         pending: { ...intent, title, durationMinutes },
       };
     }
@@ -899,7 +993,7 @@ export function fulfillIntent(intent: ModelIntent, context: AssistantContext): A
     }
     return {
       intentType: "create_event",
-      message: `I can add ${title} ${intent.when?.day === "tomorrow" ? "tomorrow " : ""}at ${formatClock(start, tz)}.`.replace(/\s+/g, " ").trim(),
+      message: proposalAddMessage(title, durationMinutes, start, tz),
       actions: [
         proposeCreateEvent(context, {
           title,

@@ -96,6 +96,11 @@ export function applyAtlasIntentGuards(
       when: intent.when ?? { part: "working" },
       timingMode: intent.timingMode ?? "search",
       location: intent.location,
+      relaxHours: intent.relaxHours,
+      title: intent.title,
+      eventHint: intent.eventHint,
+      sport: intent.sport,
+      category: intent.category,
     };
   }
 

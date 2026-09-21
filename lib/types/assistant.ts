@@ -50,6 +50,17 @@ export type CapabilityStatus = {
 
 export type TimingMode = "fixed" | "flexible" | "search";
 
+export type TemporalBound =
+  | "today"
+  | "tonight"
+  | "tomorrow"
+  | "morning"
+  | "afternoon"
+  | "evening"
+  | "weekday"
+  | "week"
+  | "date";
+
 export type TimeHint = {
   day?: "today" | "tomorrow" | "weekday";
   weekday?: 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -62,6 +73,8 @@ export type TimeHint = {
   month?: number;
   dayOfMonth?: number;
   week?: "this" | "next";
+  /** User-specified temporal boundary that must not be silently widened. */
+  bound?: TemporalBound;
 };
 
 export type ModelIntentType =
@@ -90,6 +103,8 @@ export type ModelIntent = {
   timingMode?: TimingMode;
   location?: string;
   untilHint?: string;
+  /** Explicit override: search outside saved hour preferences. */
+  relaxHours?: boolean;
   slotOffset?: number;
   question?: string;
   capability?: Exclude<CapabilityId, "openai" | "calendar">;
@@ -102,6 +117,13 @@ export type AssistantChoice = {
   end: string;
   reason?: string;
   recommended?: boolean;
+};
+
+export type AssistantFollowUp = {
+  id: string;
+  label: string;
+  text?: string;
+  href?: string;
 };
 
 export type AssistantContext = {
@@ -155,6 +177,7 @@ export type AssistantResponse = {
   actions: AssistantAction[];
   intentType?: ModelIntentType;
   choices?: AssistantChoice[];
+  followUps?: AssistantFollowUp[];
   windows?: FreeWindow[];
   pending?: ModelIntent;
   resume?: ModelIntent;

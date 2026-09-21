@@ -182,7 +182,7 @@ test("buffer conflicts and a full day produce usable recovery copy", () => {
     });
   }
   const none = fulfillIntent(classifyIntent("Schedule a swim tomorrow."), ctx({ events: [...ctx().events, ...busy] }));
-  assert.match(none.message, /could not find a free 1 hour window|different day or a shorter/i);
+  assert.match(none.message, /could not find a free 1 hour window|different day or a shorter|couldn't find a 1-hour opening/i);
   assert.equal(none.actions.length, 0);
 
   const blocked = fulfillIntent(classifyIntent("Schedule a 60-minute swim tomorrow at 9 AM."), ctx({ events: [...ctx().events, ...busy] }));

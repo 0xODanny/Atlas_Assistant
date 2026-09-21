@@ -1,5 +1,5 @@
 import { calendarDateFromText } from "./dayQuery";
-import type { ModelIntent, TimeHint, TimingMode } from "../types/assistant";
+import type { ModelIntent, TemporalBound, TimeHint, TimingMode } from "../types/assistant";
 
 export type ParsedSchedule = {
   timingMode?: TimingMode;
@@ -192,7 +192,9 @@ function pairRange(text: string, hits: ClockHit[]): { start: ClockHit; end: Cloc
 function inferTimingMode(text: string, hits: ClockHit[], ranged: boolean): TimingMode | undefined {
   const search =
     /\b(find(?:\s+me)?|when can i|sometime|anytime|what time can i|where can i)\b/.test(text) ||
-    /\bschedule\b.+\b(sometime|anytime|whenever)\b/.test(text);
+    /\bschedule\b.+\b(sometime|anytime|whenever)\b/.test(text) ||
+    /\b(recommend|suggest)\b/.test(text) ||
+    /\bgood time\b|\bbest time\b/.test(text);
   const around =
     hits.some((hit) => hit.prep === "around") || /\b(around|approximately|preferably|\bish\b)\b/.test(text);
   const after = hits.some((hit) => hit.prep === "after") || /\bafter\b/.test(text);
@@ -207,22 +209,54 @@ function inferTimingMode(text: string, hits: ClockHit[], ranged: boolean): Timin
 
 function whenFromParts(text: string, start?: ClockHit, end?: ClockHit): TimeHint | undefined {
   const when: TimeHint = {};
-  if (/\btomorrow/.test(text)) when.day = "tomorrow";
-  else if (/\btoday/.test(text)) when.day = "today";
+  if (/\btonight\b/.test(text)) {
+    when.day = "today";
+    when.part = "evening";
+    when.bound = "tonight";
+  } else if (/\btomorrow/.test(text)) {
+    when.day = "tomorrow";
+    when.bound = "tomorrow";
+  } else if (/\btoday/.test(text)) {
+    when.day = "today";
+    when.bound = "today";
+  }
+
+  if (when.bound !== "tonight" && (/\bthis evening\b/.test(text) || /\bevening/.test(text))) {
+    when.part = "evening";
+    if (!when.bound) when.bound = "evening";
+    if (!when.day && /\bthis evening\b/.test(text)) when.day = "today";
+  } else if (/\bafternoon/.test(text)) {
+    when.part = "afternoon";
+    if (!when.bound) when.bound = "afternoon";
+    if (!when.day && /\bthis afternoon\b/.test(text)) when.day = "today";
+  } else if (/\bmorning/.test(text)) {
+    when.part = "morning";
+    if (!when.bound) when.bound = "morning";
+    if (!when.day && /\bthis morning\b/.test(text)) when.day = "today";
+  } else if (/\blater/.test(text) && !when.part) {
+    when.part = "later";
+  }
+
   const weekday = text.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/);
-  if (weekday) {
+  if (weekday && !when.bound) {
     when.day = "weekday";
     when.weekday = WEEKDAYS.indexOf(weekday[1] as (typeof WEEKDAYS)[number]) as TimeHint["weekday"];
+    when.bound = "weekday";
   }
-  if (/\bmorning/.test(text)) when.part = "morning";
-  else if (/\bafternoon/.test(text)) when.part = "afternoon";
-  else if (/\bevening/.test(text)) when.part = "evening";
-  else if (/\blater/.test(text)) when.part = "later";
+  if (/\bthis week\b/.test(text) && !when.bound) {
+    when.week = "this";
+    when.bound = "week";
+  } else if (/\bnext week\b/.test(text) && !when.bound) {
+    when.week = "next";
+    when.bound = "week";
+  }
+
   const dated = calendarDateFromText(text);
   if (dated) {
     when.month = dated.month;
     when.dayOfMonth = dated.dayOfMonth;
     if (dated.year) when.year = dated.year;
+    if (!when.bound) when.bound = "date";
   }
   if (start) {
     when.hour = start.hour;
@@ -233,6 +267,43 @@ function whenFromParts(text: string, start?: ClockHit, end?: ClockHit): TimeHint
     when.endMinute = end.minute;
   }
   return Object.keys(when).length ? when : undefined;
+}
+
+export function hasHardTemporalBound(when?: TimeHint): boolean {
+  return Boolean(when?.bound);
+}
+
+export function searchMayWiden(when?: TimeHint): boolean {
+  return !hasHardTemporalBound(when);
+}
+
+export function defaultSearchWhen(when?: TimeHint): TimeHint {
+  if (
+    when &&
+    (when.bound ||
+      when.day ||
+      when.part ||
+      when.weekday !== undefined ||
+      when.week ||
+      when.month ||
+      when.dayOfMonth)
+  ) {
+    return when;
+  }
+  return { day: "tomorrow" };
+}
+
+export function describeTemporalBound(bound?: TemporalBound): string {
+  if (bound === "tonight") return "tonight";
+  if (bound === "today") return "today";
+  if (bound === "tomorrow") return "tomorrow";
+  if (bound === "evening") return "this evening";
+  if (bound === "afternoon") return "this afternoon";
+  if (bound === "morning") return "this morning";
+  if (bound === "week") return "this week";
+  if (bound === "weekday") return "that day";
+  if (bound === "date") return "that date";
+  return "that window";
 }
 
 export function locationFromText(text: string): string | undefined {

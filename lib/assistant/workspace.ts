@@ -1,4 +1,11 @@
-import type { AssistantAction, AssistantChoice, AssistantSource, FreeWindow, ModelIntent } from "../types/assistant";
+import type {
+  AssistantAction,
+  AssistantChoice,
+  AssistantFollowUp,
+  AssistantSource,
+  FreeWindow,
+  ModelIntent,
+} from "../types/assistant";
 
 export type AssistantTurn = {
   id: string;
@@ -7,6 +14,7 @@ export type AssistantTurn = {
   actions: AssistantAction[];
   intentType?: string;
   choices?: AssistantChoice[];
+  followUps?: AssistantFollowUp[];
   selectedChoiceId?: string;
   pending?: ModelIntent;
   resume?: ModelIntent;

@@ -40,6 +40,16 @@ export function classifyIntent(text: string, pending?: ModelIntent): ModelIntent
   const wordCount = raw.split(/\s+/).filter(Boolean).length;
   const startsNewRequest =
     /^(schedule|find|move|prepare|reorganize|re-organize|what'?s|what is|give|book|add|put|can i|how much|am i)/.test(raw);
+
+  if (pending && /outside (?:my )?(?:workout |working |focus |meeting )?hours/.test(raw)) {
+    return { ...pending, relaxHours: true };
+  }
+  if (pending && /^try tomorrow\b/.test(raw)) {
+    return { ...pending, when: { day: "tomorrow", bound: "tomorrow" }, slotOffset: 0 };
+  }
+  if (pending && /^try next week\b/.test(raw)) {
+    return { ...pending, when: { ...pending.when, week: "next", bound: "week" }, slotOffset: 0 };
+  }
   if ((pending?.type === "create_event" || pending?.type === "create_focus_block") && !startsNewRequest) {
     const duration = spokenDuration;
     if (duration || when) {
@@ -145,26 +155,28 @@ export function classifyIntent(text: string, pending?: ModelIntent): ModelIntent
   }
   if (
     (/schedule|add|book|put/.test(raw) || (schedule.timingMode === "fixed" && schedule.when?.hour !== undefined)) &&
-    (sport || /swim|bike|run|workout/.test(raw))
+    (sport || /swim|bike|run|workout|yoga|pilates|training/.test(raw))
   ) {
+    const named = titleFromRequest(text);
     return {
       type: "create_event",
-      sport: sport ?? "swim",
+      sport: sport ?? (/yoga|pilates/.test(raw) ? undefined : "swim"),
       category: "training",
-      when: when ?? (/tomorrow/.test(raw) ? { day: "tomorrow" } : undefined),
+      when: when ?? (/tomorrow/.test(raw) ? { day: "tomorrow", bound: "tomorrow" } : undefined),
       durationMinutes: spokenDuration ?? schedule.rangeMinutes,
       durationRequested: Boolean(spokenDuration ?? schedule.rangeMinutes),
       timingMode: schedule.timingMode,
       location: schedule.location,
-      title: sport === "bike" ? "Bike" : sport === "run" ? "Run" : "Swim",
+      title: named ?? (sport === "bike" ? "Bike" : sport === "run" ? "Run" : sport === "strength" ? "Strength" : sport === "recovery" ? "Recovery" : /yoga/.test(raw) ? "Yoga" : /pilates/.test(raw) ? "Pilates" : "Swim"),
     };
   }
   if (/^(please\s+)?(schedule|add|book|create|put)\b/.test(raw) && !/train/.test(raw)) {
     return {
       type: "create_event",
       title: titleFromRequest(text),
-      when: when ?? (/tomorrow/.test(raw) ? { day: "tomorrow" } : undefined),
+      when: when ?? (/tomorrow/.test(raw) ? { day: "tomorrow", bound: "tomorrow" } : undefined),
       durationMinutes: spokenDuration,
+      durationRequested: Boolean(spokenDuration),
       timingMode: schedule.timingMode,
       location: schedule.location,
       category: "personal",
@@ -191,13 +203,14 @@ export function classifyIntent(text: string, pending?: ModelIntent): ModelIntent
   ) {
     return {
       type: "find_time",
-      durationMinutes: spokenDuration ?? (/marcus|meet/.test(raw) ? 45 : /train|swim|bike/.test(raw) ? 60 : 90),
+      durationMinutes: spokenDuration ?? (/marcus|meet/.test(raw) ? 45 : /train|swim|bike|workout|yoga|pilates/.test(raw) ? 60 : 90),
       durationRequested: Boolean(spokenDuration),
       when: when ?? { part: "working" },
       timingMode: schedule.timingMode ?? "search",
       location: schedule.location,
       untilHint: /before marcus|before the meeting/.test(raw) ? "marcus" : undefined,
-      eventHint: /marcus/.test(raw) ? "marcus" : eventHint,
+      eventHint: /marcus/.test(raw) ? "marcus" : eventHint ?? (/yoga/.test(raw) ? "yoga" : /workout/.test(raw) ? "workout" : undefined),
+      title: /yoga/.test(raw) ? "Yoga" : /pilates/.test(raw) ? "Pilates" : undefined,
     };
   }
   if (/next meeting/.test(raw) && !/prepare/.test(raw)) return { type: "answer", topic: "next_meeting" };
