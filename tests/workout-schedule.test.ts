@@ -82,7 +82,8 @@ test("open-ended swim tomorrow offers dated alternatives and does not claim a us
   assert.match(result.message, /How about /);
   assert.ok(result.choices && result.choices.length >= 2);
   assert.ok(result.choices.length <= 3);
-  assert.match(result.choices[0]!.label, /Recommended/);
+  assert.equal(result.choices[0]!.recommended, true);
+  assert.doesNotMatch(result.choices[0]!.label, /Recommended/);
   for (const choice of result.choices) {
     assert.match(choice.label, /Tomorrow, Fri Sep 18/);
     assert.doesNotMatch(choice.reason ?? "", /pool|usual time|you always|30 minutes afterward/i);

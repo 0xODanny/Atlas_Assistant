@@ -1,14 +1,13 @@
 import type { AssistantContext, ModelIntent } from "../types/assistant";
 import { durationFromText, eventHintFromText, sportFromText } from "./classify";
 import { calendarDateFromText, isAvailabilityRequest, isDayOverviewRequest, isMeetingAvailabilityRequest } from "./dayQuery";
+import { applyUserSchedule, rangeDurationMinutes, userSpecifiedClock } from "./parseSchedule";
 import { sanitizeEventTitle, titleFromRequest } from "./title";
+
+export { userSpecifiedClock };
 
 function normalize(text: string): string {
   return text.toLowerCase().replace(/[’']/g, "'").trim();
-}
-
-export function userSpecifiedClock(text: string): boolean {
-  return /(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i.test(text) || /\bat\s+\d{1,2}\b/i.test(text);
 }
 
 function stripInventedClock(intent: ModelIntent, text: string): ModelIntent {
@@ -16,6 +15,8 @@ function stripInventedClock(intent: ModelIntent, text: string): ModelIntent {
   const when = { ...intent.when };
   delete when.hour;
   delete when.minute;
+  delete when.endHour;
+  delete when.endMinute;
   return { ...intent, when };
 }
 
@@ -85,6 +86,7 @@ export function applyAtlasIntentGuards(
 
   if (
     spokenDuration &&
+    intent.timingMode !== "fixed" &&
     /squeeze|uninterrupted|where can i|find me|minutes to work|time to work|give me \d+/.test(raw)
   ) {
     return {
@@ -92,6 +94,8 @@ export function applyAtlasIntentGuards(
       durationMinutes: spokenDuration,
       durationRequested: true,
       when: intent.when ?? { part: "working" },
+      timingMode: intent.timingMode ?? "search",
+      location: intent.location,
     };
   }
 
@@ -188,7 +192,9 @@ export function applyAtlasIntentGuards(
       title,
       durationMinutes,
       durationRequested:
-        intent.type === "create_event" ? Boolean(spokenDuration) : Boolean(spokenDuration) || intent.durationRequested,
+        Boolean(spokenDuration) ||
+        intent.durationRequested ||
+        rangeDurationMinutes(intent.when) !== undefined,
     };
   }
 
@@ -202,7 +208,7 @@ export function refineModelIntent(
   context: AssistantContext,
 ): ModelIntent {
   return applyAtlasIntentGuards(
-    stripInventedClock(completePending(pending, model, text), text),
+    applyUserSchedule(stripInventedClock(completePending(pending, model, text), text), text),
     text,
     context,
   );

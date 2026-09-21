@@ -6,3 +6,5 @@ export const ASSISTANT_CHIPS = [
   "Prepare me for my next meeting.",
   "Reorganize tomorrow.",
 ] as const;
+
+export const ASSISTANT_PRIMARY_CHIPS = ASSISTANT_CHIPS.slice(0, 4);

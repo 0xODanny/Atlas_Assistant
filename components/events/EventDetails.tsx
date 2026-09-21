@@ -31,9 +31,9 @@ export function EventDetails({ eventId }: { eventId: string }) {
   const people = participantSummary(event, state.profile.displayName);
 
   return (
-    <article className="mx-auto max-w-xl">
+    <article className="page-column">
       <div className="flex gap-3">
-        <CategoryMark category={event.category} />
+        <CategoryMark event={event} overrides={state.profile.eventColorOverrides} />
         <div>
           <h1 className="display-title">{event.title}</h1>
           <p className="mt-1.5 text-sm text-[var(--muted)]">
@@ -44,8 +44,12 @@ export function EventDetails({ eventId }: { eventId: string }) {
               : formatRange(event.start, event.end, timezone)}
           </p>
           {event.source === "google" ? (
-            <p className="mt-1 text-[12px] uppercase tracking-[0.14em] text-[var(--muted)]">Google Calendar</p>
-          ) : null}
+            <p className="mt-1 text-[12px] uppercase tracking-[0.14em] text-[var(--atlas-muted)]">
+              Google Calendar{event.calendarId ? ` · ${event.calendarId}` : ""}
+            </p>
+          ) : (
+            <p className="mt-1 text-[12px] uppercase tracking-[0.14em] text-[var(--atlas-muted)]">Atlas · Local</p>
+          )}
           {event.demo ? (
             <p className="mt-1 text-[12px] uppercase tracking-[0.14em] text-[var(--muted)]">Sample</p>
           ) : null}
@@ -118,7 +122,7 @@ export function EventDetails({ eventId }: { eventId: string }) {
         </div>
       ) : null}
 
-      <div className="mt-5 flex scroll-mb-[var(--atlas-bottom-inset)] flex-wrap gap-2">
+      <div className="mt-8 flex scroll-mb-[var(--atlas-bottom-inset)] flex-col items-start gap-1">
         {showPrepare ? (
           <button type="button" className="btn-quiet" onClick={() => openSheet({ name: "prepare", eventId: event.id })}>
             {actionLabelForCategory(event.category)}
@@ -136,7 +140,7 @@ export function EventDetails({ eventId }: { eventId: string }) {
         </button>
         <button
           type="button"
-          className="btn-quiet"
+          className="btn-danger"
           onClick={() => {
             void deleteEvent(event.id).then((result) => {
               if (result.ok) router.push("/calendar");

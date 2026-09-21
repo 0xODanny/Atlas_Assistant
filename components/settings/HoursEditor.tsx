@@ -28,56 +28,51 @@ export function HoursEditor({
 }) {
   const midnight = isMidnightEnd(hours.end);
   return (
-    <div className="space-y-3">
-      <div>
-        <p className="text-[15px]">{label}</p>
-        {hint ? <p className="text-sm text-[var(--muted)]">{hint}</p> : null}
-        <p className="text-xs text-[var(--muted)]">
-          {hours.source === "user" ? "Saved preference" : "Initial default"} · {formatHourClock(hours.start)}–
-          {formatHourClock(hours.end)}
-        </p>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
+    <div className="hours-editor">
+      <p className="setting-row-label">{label}</p>
+      {hint ? <p className="setting-note">{hint}</p> : null}
+      <div className="hours-editor-times">
         <label className="field">
-          <span>Start</span>
           <input
             type="time"
             value={hours.start}
+            aria-label={`${label} start`}
             onChange={(event) => onChange({ start: event.target.value })}
           />
+          <span>Start</span>
         </label>
         <label className="field">
-          <span>End</span>
           <input
             type="time"
             value={midnight ? "00:00" : hours.end}
             disabled={midnight}
+            aria-label={`${label} end`}
             onChange={(event) => onChange({ end: event.target.value === "00:00" ? "24:00" : event.target.value })}
           />
+          <span>End {midnight ? "· midnight" : ""}</span>
         </label>
       </div>
       {allowMidnight ? (
-        <label className="flex items-center justify-between gap-3 text-[15px]">
-          <span>Until midnight</span>
-          <input
-            type="checkbox"
-            checked={midnight}
-            aria-label={`${label} until midnight`}
-            onChange={(event) => onChange({ end: event.target.checked ? "24:00" : "18:00" })}
-          />
+        <label className="setting-row">
+          <span className="setting-row-label">Until midnight</span>
+          <span className="setting-row-control">
+            <input
+              type="checkbox"
+              checked={midnight}
+              aria-label={`${label} until midnight`}
+              onChange={(event) => onChange({ end: event.target.checked ? "24:00" : "18:00" })}
+            />
+          </span>
         </label>
       ) : null}
-      {midnight ? (
-        <p className="text-sm text-[var(--muted)]">Midnight is the end of the selected day, not the beginning.</p>
-      ) : null}
-      <div className="flex flex-wrap gap-2">
+      <div className="settings-days" role="group" aria-label={`${label} days`}>
         {DAY_CHIPS.map((day) => {
           const selected = hours.days.includes(day.id);
           return (
             <button
               key={day.id}
               type="button"
-              className={selected ? "btn-solid" : "btn-quiet"}
+              className="day-chip"
               aria-pressed={selected}
               onClick={() => {
                 const days = selected ? hours.days.filter((item) => item !== day.id) : [...hours.days, day.id];
@@ -89,6 +84,10 @@ export function HoursEditor({
           );
         })}
       </div>
+      <p className="setting-note">
+        {hours.source === "user" ? "Saved preference" : "Initial default"} · {formatHourClock(hours.start)}–
+        {formatHourClock(hours.end)}
+      </p>
     </div>
   );
 }

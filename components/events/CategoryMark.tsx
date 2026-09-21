@@ -1,20 +1,19 @@
-import type { EventCategory } from "@/lib/types/event";
+import { eventFill } from "@/lib/present/eventColor";
+import type { EventColorInput } from "@/lib/present/eventColor";
+import type { EventColorOverrides } from "@/lib/types/profile";
 
-const COLORS: Record<EventCategory, string> = {
-  meeting: "var(--cat-meeting)",
-  work: "var(--cat-work)",
-  training: "var(--cat-training)",
-  focus: "var(--cat-focus)",
-  travel: "var(--cat-travel)",
-  personal: "var(--cat-personal)",
-};
-
-export function CategoryMark({ category }: { category: EventCategory }) {
+export function CategoryMark({
+  event,
+  overrides,
+}: {
+  event: EventColorInput;
+  overrides?: EventColorOverrides;
+}) {
   return (
     <span
       aria-hidden
-      className="mt-1 inline-block h-6 w-[3px] shrink-0 rounded-full"
-      style={{ background: COLORS[category] }}
+      className="mt-1.5 inline-block h-7 w-[3px] shrink-0"
+      style={{ background: eventFill(event, overrides) }}
     />
   );
 }

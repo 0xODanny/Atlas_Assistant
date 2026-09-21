@@ -105,25 +105,43 @@ export function workoutBufferIntervals(
   });
 }
 
+export type PlanningConflict =
+  | { kind: "event"; event: CalendarEvent }
+  | { kind: "workout_buffer"; workout: CalendarEvent; bufferEnd: number };
+
+export function findPlanningConflict(
+  startIso: string,
+  endIso: string,
+  events: CalendarEvent[],
+  extras?: { workouts?: Workout[]; afterWorkoutBufferMinutes?: number },
+): PlanningConflict | undefined {
+  const start = new Date(startIso).getTime();
+  const end = new Date(endIso).getTime();
+  const event = events.find((item) => {
+    if (!eventBlocksTime(item)) return false;
+    return end > new Date(item.start).getTime() && start < new Date(item.end).getTime();
+  });
+  if (event) return { kind: "event", event };
+
+  const workouts = extras?.workouts ?? [];
+  const bufferMinutes = extras?.afterWorkoutBufferMinutes ?? 0;
+  const buffers = workoutBufferIntervals(events, workouts, bufferMinutes);
+  const block = buffers.find((interval) => interval.end > start && interval.start < end);
+  if (!block) return undefined;
+  const workout = events.find(
+    (item) => isRecognizedWorkout(item, workouts) && new Date(item.end).getTime() === block.start,
+  );
+  if (!workout) return undefined;
+  return { kind: "workout_buffer", workout, bufferEnd: block.end };
+}
+
 export function planningConflicts(
   startIso: string,
   endIso: string,
   events: CalendarEvent[],
   extras?: { workouts?: Workout[]; afterWorkoutBufferMinutes?: number },
 ): boolean {
-  const start = new Date(startIso).getTime();
-  const end = new Date(endIso).getTime();
-  if (
-    events.some((event) => {
-      if (!eventBlocksTime(event)) return false;
-      return end > new Date(event.start).getTime() && start < new Date(event.end).getTime();
-    })
-  ) {
-    return true;
-  }
-  return workoutBufferIntervals(events, extras?.workouts ?? [], extras?.afterWorkoutBufferMinutes ?? 0).some(
-    (block) => block.end > start && block.start < end,
-  );
+  return Boolean(findPlanningConflict(startIso, endIso, events, extras));
 }
 
 export function tightTransitions(

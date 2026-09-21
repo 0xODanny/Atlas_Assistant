@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ASSISTANT_CHIPS } from "@/lib/assistant/chips";
+import { ASSISTANT_PRIMARY_CHIPS } from "@/lib/assistant/chips";
 import { resolveChoiceFromText } from "@/lib/assistant/followUp";
 import { actionFromCreateChoice, actionFromMoveChoice } from "@/lib/assistant/fulfill";
 import { addMinutes } from "@/lib/time";
@@ -22,10 +22,16 @@ import { useNow } from "@/lib/hooks/useNow";
 import { useAppState } from "@/lib/state/provider";
 import { readClockNow } from "@/lib/time/clock";
 import type { AssistantChoice, AssistantResponse } from "@/lib/types/assistant";
+import { useVisualMode } from "@/lib/hooks/useVisualMode";
+import { visualAssistantTurn } from "@/lib/present/visualFixture";
+import { useRouter } from "next/navigation";
+import { useSpeechDictation } from "@/lib/hooks/useSpeechDictation";
+import { useShellBack } from "../shell/ShellChrome";
 import { AssistantResult } from "./AssistantResult";
 
 export function AssistantChat() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { state, applyAction, googleWriteEnabled, openSheet } = useAppState();
   const now = useNow();
   const [input, setInput] = useState("");
@@ -33,8 +39,15 @@ export function AssistantChat() {
   const [applying, setApplying] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [workspace, setWorkspace] = useState<AssistantWorkspace>(emptyWorkspace);
+  const dictation = useSpeechDictation(setInput);
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
+  const visualMode = useVisualMode();
+
+  useEffect(() => {
+    if (visualMode !== "assistant" || workspaceRef.current.active) return;
+    setWorkspace(replaceActiveResponse(emptyWorkspace(), visualAssistantTurn(now, state.profile.timezone)));
+  }, [now, state.profile.timezone, visualMode]);
 
   const context = useMemo(
     () => ({
@@ -65,6 +78,7 @@ export function AssistantChat() {
   async function send(text: string, continuePending = false) {
     const trimmed = text.trim();
     if (!canSubmitAssistant(pending, trimmed)) return;
+    dictation.stop();
 
     if (continuePending && workspaceRef.current.active?.choices?.length) {
       const matched = resolveChoiceFromText(trimmed, workspaceRef.current.active.choices);
@@ -149,66 +163,82 @@ export function AssistantChat() {
 
   const active = workspace.active;
 
+  const clearToLanding = useCallback(() => {
+    setWorkspace(emptyWorkspace());
+    setShowHistory(false);
+    if (searchParams.get("prompt") || searchParams.get("visual")) {
+      router.replace("/assistant");
+    }
+  }, [router, searchParams]);
+
+  useShellBack(active ? { fallback: "/assistant", onBack: clearToLanding } : null);
+
   function selectChoice(choice: AssistantChoice) {
     applyChoice(choice);
   }
 
   return (
-    <div className="assistant-workspace mx-auto w-full max-w-3xl">
-      <div>
-        <p className="section-kicker">Assistant</p>
-        <div className="mt-1.5 flex items-end justify-between gap-3">
-          <h1 className="display-title">What do you need?</h1>
-          {workspace.history.length ? (
-            <button
-              type="button"
-              className="btn-quiet shrink-0"
-              aria-expanded={showHistory}
-              onClick={() => setShowHistory((open) => !open)}
-            >
-              History
-            </button>
-          ) : null}
+    <div className={`assistant-workspace page-column ${active ? "is-result" : "is-landing"}`}>
+      {!active ? (
+        <div>
+          <p className="section-kicker">Assistant</p>
+          <h1 className="display-title-assistant mt-2" data-atlas-assistant-heading>
+            Make room for what matters.
+          </h1>
+          <p className="body-copy mt-5 max-w-md">I’ll ask before changing your calendar.</p>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {ASSISTANT_CHIPS.map((prompt) => (
-            <button
-              key={prompt}
-              type="button"
-              className={active?.prompt === prompt ? "btn-solid" : "btn-quiet"}
-              disabled={pending}
-              onClick={() => void send(prompt, false)}
-            >
-              {prompt}
-            </button>
+      ) : workspace.history.length ? (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            className="btn-quiet shrink-0"
+            aria-expanded={showHistory}
+            onClick={() => setShowHistory((open) => !open)}
+          >
+            History
+          </button>
+        </div>
+      ) : null}
+      {showHistory ? (
+        <ul className="mt-3 space-y-1">
+          {workspace.history.map((turn) => (
+            <li key={turn.id}>
+              <button
+                type="button"
+                className="text-left text-[15px] text-[var(--muted)] underline-offset-2 hover:underline"
+                onClick={() => {
+                  setWorkspace((current) => restoreHistoryTurn(current, turn.id));
+                  setShowHistory(false);
+                }}
+              >
+                {turn.prompt}
+              </button>
+            </li>
           ))}
-        </div>
-        {showHistory ? (
-          <ul className="mt-3 space-y-1">
-            {workspace.history.map((turn) => (
-              <li key={turn.id}>
-                <button
-                  type="button"
-                  className="text-left text-[13px] text-[var(--muted)] underline-offset-2 hover:underline"
-                  onClick={() => {
-                    setWorkspace((current) => restoreHistoryTurn(current, turn.id));
-                    setShowHistory(false);
-                  }}
-                >
-                  {turn.prompt}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
+        </ul>
+      ) : null}
 
-      <section className="mt-5 min-h-0 flex-1 overflow-y-auto" aria-live="polite" data-testid="assistant-active">
-        {pending ? <p className="min-h-5 text-sm text-[var(--muted)]">Thinking…</p> : <p className="min-h-5 text-sm text-[var(--muted)]">{workspace.lastError ?? ""}</p>}
+      <section className="mt-4 min-h-0 flex-1" aria-live="polite" data-testid="assistant-active">
+        {pending ? (
+          <p className="min-h-5 text-[16px] text-[var(--atlas-muted)]">Thinking…</p>
+        ) : (
+          <p className="min-h-5 text-[16px] text-[var(--atlas-muted)]">{workspace.lastError ?? ""}</p>
+        )}
         {!active ? (
-          <p className="text-[15px] leading-7 text-[var(--muted)]">
-            Ask about today, open time, or a change you want me to propose. I will not silently edit the calendar.
-          </p>
+          <div>
+            {ASSISTANT_PRIMARY_CHIPS.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                className="starter-row"
+                disabled={pending}
+                onClick={() => void send(prompt, false)}
+              >
+                <span>{prompt}</span>
+                <span className="starter-arrow" aria-hidden>→</span>
+              </button>
+            ))}
+          </div>
         ) : (
           <AssistantResult
             key={active.id}
@@ -274,7 +304,7 @@ export function AssistantChat() {
       </section>
 
       <form
-        className="mt-4 shrink-0 bg-[var(--background)] pt-2"
+        className="atlas-composer-dock mt-auto shrink-0"
         onSubmit={(event) => {
           event.preventDefault();
           void send(input, true);
@@ -283,19 +313,48 @@ export function AssistantChat() {
         <label className="sr-only" htmlFor="assistant-input">
           Message
         </label>
-        <div className="flex gap-2">
+        <div className="composer-shell">
           <input
             id="assistant-input"
-            className="min-h-12 flex-1"
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Ask about today…"
+            placeholder={dictation.listening ? "Listening…" : "Ask Atlas anything…"}
+            disabled={pending}
           />
-          <button type="submit" className="btn-solid" disabled={pending}>
-            Send
+          <button
+            type="button"
+            className={`composer-mic${dictation.listening ? " is-listening" : ""}`}
+            aria-label={dictation.listening ? "Stop voice input" : "Dictate"}
+            aria-pressed={dictation.listening}
+            disabled={pending || dictation.status === "unsupported"}
+            onClick={() => dictation.toggle(input)}
+          >
+            <MicIcon />
+          </button>
+          <button type="submit" className="composer-send" disabled={pending} aria-label="Send">
+            →
           </button>
         </div>
+        {dictation.status === "unsupported" ? (
+          <p className="composer-voice-note">Voice input isn’t supported in this browser.</p>
+        ) : dictation.status === "denied" ? (
+          <p className="composer-voice-note">Microphone access was denied. You can still type.</p>
+        ) : dictation.status === "error" ? (
+          <p className="composer-voice-note">Voice input couldn’t start. Try again or type instead.</p>
+        ) : dictation.listening ? (
+          <p className="composer-voice-note">Listening… tap the microphone to stop.</p>
+        ) : null}
       </form>
     </div>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
+      <rect x="6.25" y="2.25" width="5.5" height="8.5" rx="2.75" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M4 8.5a5 5 0 0 0 10 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M9 13.5v2.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
   );
 }

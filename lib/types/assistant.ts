@@ -48,12 +48,16 @@ export type CapabilityStatus = {
   available: boolean;
 };
 
+export type TimingMode = "fixed" | "flexible" | "search";
+
 export type TimeHint = {
   day?: "today" | "tomorrow" | "weekday";
   weekday?: 0 | 1 | 2 | 3 | 4 | 5 | 6;
   part?: "morning" | "afternoon" | "evening" | "later" | "working";
   hour?: number;
   minute?: number;
+  endHour?: number;
+  endMinute?: number;
   year?: number;
   month?: number;
   dayOfMonth?: number;
@@ -83,6 +87,8 @@ export type ModelIntent = {
   category?: CalendarEvent["category"];
   sport?: Workout["sport"];
   when?: TimeHint;
+  timingMode?: TimingMode;
+  location?: string;
   untilHint?: string;
   slotOffset?: number;
   question?: string;
@@ -95,6 +101,7 @@ export type AssistantChoice = {
   start: string;
   end: string;
   reason?: string;
+  recommended?: boolean;
 };
 
 export type AssistantContext = {

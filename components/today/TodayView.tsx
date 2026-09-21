@@ -1,52 +1,43 @@
 "use client";
 
-import { findFreeTime, suggestFocusWindow, totalOpenMinutes } from "@/lib/calendar/freeTime";
+import Link from "next/link";
+import { findFreeTime, suggestFocusWindow } from "@/lib/calendar/freeTime";
 import { resolveScheduleHours } from "@/lib/calendar/hours";
 import { planningFreeTimeOptions } from "@/lib/calendar/transitionBuffer";
-import {
-  formatCompactHours,
-  formatDayHeading,
-  formatRange,
-  greetingForNow,
-} from "@/lib/format";
+import { formatFullDateUpper, formatRange, greetingEditorial, remainingOpenLabel } from "@/lib/format";
 import { useNow } from "@/lib/hooks/useNow";
-import { isUpcomingMeeting } from "@/lib/calendar/meetings";
-import { nextUpcomingEvent, presentNextStatus } from "@/lib/present/status";
-import { linkedMeeting, linkedWorkout } from "@/lib/prepare/content";
+import { useVisualEvents } from "@/lib/hooks/useVisualMode";
+import { nextActiveEvent } from "@/lib/present/status";
+import { eventJoinAction, eventPlaceLabel } from "@/lib/present/link";
 import { useAppState } from "@/lib/state/provider";
-import {
-  calendarReadStatus,
-  dayEventsFor,
-  groupDayEvents,
-  todayCountLabel,
-} from "@/lib/calendar/dayAgenda";
+import { calendarReadStatus, dayEventsFor } from "@/lib/calendar/dayAgenda";
+import { dayTimelineItems, todaySubtitle } from "@/lib/calendar/timeline";
 import { addDays, startOfZonedDay } from "@/lib/time";
 import { availabilitySearchStart } from "@/lib/time/clock";
 import { useEffect } from "react";
 import type { CalendarEvent } from "@/lib/types/event";
-import type { Meeting } from "@/lib/types/meeting";
-import type { UserProfile } from "@/lib/types/profile";
-import type { Workout } from "@/lib/types/training";
-import { EventRow } from "../events/EventRow";
+import { EmptyState, InlineStatus } from "../ui/EmptyState";
+import { TodayComposer } from "./TodayComposer";
+import { TodayTimeline } from "./TodayTimeline";
 
 export function TodayView() {
   const { ready, state, openSheet, refreshGoogle, googleSyncing } = useAppState();
   useEffect(() => {
     void refreshGoogle();
   }, [refreshGoogle]);
-  const { profile, events, tasks, workouts, meetings } = state;
+  const { profile, tasks } = state;
   const now = useNow();
+  const events = useVisualEvents(state.events, now, profile.timezone);
   const dayStart = startOfZonedDay(profile.timezone, now);
   const dayEnd = addDays(dayStart, 1);
   const todays = dayEventsFor(events, now, profile.timezone);
-  const groups = groupDayEvents(todays, now);
   const readStatus = calendarReadStatus({
     ready,
     syncing: googleSyncing,
     google: state.connections.google,
     dayEventCount: todays.length,
   });
-  const next = nextUpcomingEvent(todays, now);
+  const next = nextActiveEvent(todays, now);
   const windows = findFreeTime({
     start: availabilitySearchStart(now, profile.timezone),
     end: dayEnd,
@@ -55,191 +46,122 @@ export function TodayView() {
     timezone: profile.timezone,
     workingHours: resolveScheduleHours(profile, "focus"),
     useWorkingHours: true,
-    ...planningFreeTimeOptions(profile, workouts),
+    ...planningFreeTimeOptions(profile, state.workouts),
   });
   const focus = suggestFocusWindow(windows, profile.timezone, now);
   const important = tasks.filter((task) => task.important && !task.completed);
-  const prepCount = todays.filter((event) => {
-    if (!event.preparationRequired || event.preparationMinutes <= 0) return false;
-    if (event.category === "meeting") return isUpcomingMeeting(event, now);
-    return event.category === "work";
-  }).length;
-  const nextStatus = next
-    ? presentNextStatus({
-        event: next,
-        now,
-        timezone: profile.timezone,
-        workout: linkedWorkout(next, workouts),
-        meeting: linkedMeeting(next, meetings),
-        selfName: profile.displayName,
-      })
-    : undefined;
+  const timeline = dayTimelineItems(todays);
+  const openLabel = focus ? remainingOpenLabel(focus.start, focus.end, profile.timezone) : "";
+  const subtitle = todaySubtitle({
+    status: readStatus,
+    events: todays,
+    timezone: profile.timezone,
+  });
 
   return (
-    <div className="mx-auto max-w-xl md:max-w-3xl">
-      <p className="text-sm text-[var(--muted)]">{formatDayHeading(now.toISOString(), profile.timezone)}</p>
-      <h1 className="display-title mt-1.5">{greetingForNow(now.toISOString(), profile.timezone, profile.displayName)}</h1>
-      <p className="mt-2 text-[14px] leading-6 text-[var(--muted)]">
-        {todayCountLabel(todays.length, readStatus)}
-        {readStatus === "ready" ? (
-          <>
-            <span aria-hidden className="px-2">
-              ·
-            </span>
-            {formatCompactHours(totalOpenMinutes(windows))} open
-            <span aria-hidden className="px-2">
-              ·
-            </span>
-            {prepCount} {prepCount === 1 ? "preparation item" : "preparation items"}
-            <span aria-hidden className="px-2">
-              ·
-            </span>
-            {important.length} important {important.length === 1 ? "task" : "tasks"}
-          </>
-        ) : null}
-      </p>
+    <div className={`page-column today-stack${todays.length === 0 ? " is-empty" : ""}`}>
+      <p className="section-kicker">{formatFullDateUpper(now.toISOString(), profile.timezone)}</p>
+      <h1 className="display-title mt-3" data-atlas-greeting>
+        {greetingEditorial(now.toISOString(), profile.timezone, profile.displayName)}
+      </h1>
+      <p className="body-copy mt-3 max-w-md">{subtitle}</p>
+      <Link href="/brief" className="brief-row mt-6">
+        <span>Morning brief</span>
+        <span className="starter-arrow" aria-hidden>→</span>
+      </Link>
 
-      {nextStatus ? (
-        <section className="mt-5">
-          <p className="section-kicker">Next</p>
-          <p className="mt-1 text-[20px] font-medium tracking-tight">{nextStatus.title}</p>
-          <p className="mt-0.5 text-[13px] text-[var(--muted)]">{nextStatus.lead}</p>
-          {nextStatus.summary ? <p className="mt-0.5 text-[13px] text-[var(--muted)]">{nextStatus.summary}</p> : null}
-        </section>
-      ) : null}
+      {next ? <UpNext event={next} timezone={profile.timezone} /> : null}
 
-      <section className="mt-6">
-        <div className="flex items-center gap-3">
-          <p className="section-kicker">Today</p>
-          <button type="button" className="btn-quiet min-h-10 px-3 md:min-h-9" onClick={() => openSheet({ name: "event", mode: "create" })}>
-            + Add
+      <section className="mt-10">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="section-title">Your day</h2>
+          <button
+            type="button"
+            className="add-round"
+            aria-label="Add event"
+            onClick={() => openSheet({ name: "event", mode: "create" })}
+          >
+            +
           </button>
         </div>
-        {readStatus === "loading" && todays.length === 0 ? (
-          <p className="mt-4 text-[var(--muted)]">Loading calendar…</p>
-        ) : null}
-        {readStatus === "unavailable" ? (
-          <p className="mt-4 text-[var(--muted)]">Could not read your calendar.</p>
-        ) : null}
+        {readStatus === "loading" && todays.length === 0 ? <EmptyState>Loading calendar…</EmptyState> : null}
+        {readStatus === "unavailable" ? <EmptyState>Could not read your calendar.</EmptyState> : null}
         {readStatus === "ready" && todays.length === 0 ? (
-          <p className="mt-4 text-[var(--muted)]">Nothing scheduled today.</p>
+          <div className="empty-card" data-atlas-empty-day>
+            <h3 className="section-title">Your day is open</h3>
+            <p className="body-copy mt-2">No events scheduled yet.</p>
+            <div className="mt-5 flex flex-wrap gap-x-4 gap-y-2">
+              <Link href="/assistant?prompt=Plan%20my%20day" className="btn-solid">
+                Plan my day
+              </Link>
+              <button type="button" className="btn-quiet" onClick={() => openSheet({ name: "event", mode: "create" })}>
+                Add event
+              </button>
+            </div>
+          </div>
         ) : null}
-        {groups.allDay.length ? (
-          <AgendaGroup
-            label="All day"
-            events={groups.allDay}
-            now={now}
-            profile={profile}
-            workouts={workouts}
-            meetings={meetings}
-            onPrepare={(id) => openSheet({ name: "prepare", eventId: id })}
-            onMove={(id) => openSheet({ name: "move", eventId: id })}
-          />
-        ) : null}
-        {groups.now.length ? (
-          <AgendaGroup
-            label="Now"
-            events={groups.now}
-            now={now}
-            profile={profile}
-            workouts={workouts}
-            meetings={meetings}
-            onPrepare={(id) => openSheet({ name: "prepare", eventId: id })}
-            onMove={(id) => openSheet({ name: "move", eventId: id })}
-          />
-        ) : null}
-        {groups.upcoming.length ? (
-          <AgendaGroup
-            label="Upcoming"
-            events={groups.upcoming}
-            now={now}
-            profile={profile}
-            workouts={workouts}
-            meetings={meetings}
-            onPrepare={(id) => openSheet({ name: "prepare", eventId: id })}
-            onMove={(id) => openSheet({ name: "move", eventId: id })}
-          />
-        ) : null}
-        {groups.completed.length ? (
-          <AgendaGroup
-            label="Completed"
-            events={groups.completed}
-            now={now}
-            profile={profile}
-            workouts={workouts}
-            meetings={meetings}
-            onPrepare={(id) => openSheet({ name: "prepare", eventId: id })}
-            onMove={(id) => openSheet({ name: "move", eventId: id })}
-          />
+        {todays.length > 0 ? (
+          <TodayTimeline items={timeline} timezone={profile.timezone} colorOverrides={profile.eventColorOverrides} />
         ) : null}
       </section>
 
-      {focus || important.length ? (
-        <div className="scan-grid mt-6">
-          {focus ? (
-            <section>
-              <p className="section-kicker">Suggested focus</p>
-              <p className="mt-1.5 text-[16px]">{formatRange(focus.start, focus.end, profile.timezone)}</p>
-              <p className="mt-0.5 text-[13px] text-[var(--muted)]">
-                Best uninterrupted window · {formatCompactHours(focus.minutes)}
-              </p>
-            </section>
-          ) : null}
-          {important.length ? (
-            <section>
-              <p className="section-kicker">Important tasks</p>
-              <ul className="mt-1.5 space-y-1">
-                {important.map((task) => (
-                  <li key={task.id} className="text-[14px] leading-6">
-                    {task.title}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-        </div>
+      {focus && todays.length > 0 ? (
+        <section className="mt-8">
+          <p className="section-kicker">Open time</p>
+          <p className="mt-2 text-[16px]">{openLabel}</p>
+          {openLabel === "Rest of day open" ? null : (
+            <InlineStatus>Longest stretch still free.</InlineStatus>
+          )}
+        </section>
       ) : null}
+
+      {important.length ? (
+        <section className="mt-8">
+          <p className="section-kicker">Important</p>
+          <ul className="mt-2 space-y-1">
+            {important.map((task) => (
+              <li key={task.id} className="text-[16px] leading-6">
+                {task.title}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <TodayComposer />
     </div>
   );
 }
 
-function AgendaGroup({
-  label,
-  events,
-  now,
-  profile,
-  workouts,
-  meetings,
-  onPrepare,
-  onMove,
+function UpNext({
+  event,
+  timezone,
 }: {
-  label: string;
-  events: CalendarEvent[];
-  now: Date;
-  profile: UserProfile;
-  workouts: Workout[];
-  meetings: Meeting[];
-  onPrepare: (id: string) => void;
-  onMove: (id: string) => void;
+  event: CalendarEvent;
+  timezone: string;
 }) {
+  const join = eventJoinAction(event);
+  const place = eventPlaceLabel(event);
+  const when = event.allDay ? "All day" : formatRange(event.start, event.end, timezone);
+  const meta = [when, place].filter(Boolean).join(" · ");
+
   return (
-    <div className="mt-2">
-      <p className="text-[12px] uppercase tracking-[0.14em] text-[var(--muted)]">{label}</p>
-      <div className="divide-y divide-[var(--line)]">
-        {events.map((event) => (
-          <EventRow
-            key={event.id}
-            event={event}
-            timezone={profile.timezone}
-            workout={linkedWorkout(event, workouts)}
-            meeting={linkedMeeting(event, meetings)}
-            selfName={profile.displayName}
-            now={now}
-            onPrepare={() => onPrepare(event.id)}
-            onMove={() => onMove(event.id)}
-          />
-        ))}
+    <section className="up-next mt-7" data-atlas-up-next>
+      <p className="text-[12px] uppercase tracking-[0.18em] text-white/70">Up next</p>
+      <h2 className="section-title mt-3 text-[var(--atlas-surface)]">{event.title}</h2>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[14px] text-white/80">{meta}</p>
+        {join ? (
+          <a
+            href={join.href}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-h-11 items-center text-[16px] text-white"
+          >
+            {join.label} →
+          </a>
+        ) : null}
       </div>
-    </div>
+    </section>
   );
 }

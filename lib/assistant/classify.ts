@@ -1,6 +1,7 @@
-import type { ModelIntent, TimeHint } from "../types/assistant";
+import type { ModelIntent } from "../types/assistant";
 import type { Sport } from "../types/training";
-import { calendarDateFromText, isAvailabilityRequest, isDayOverviewRequest } from "./dayQuery";
+import { isAvailabilityRequest, isDayOverviewRequest } from "./dayQuery";
+import { parseScheduleFromText } from "./parseSchedule";
 import { titleFromRequest } from "./title";
 
 function normalize(text: string): string {
@@ -24,81 +25,36 @@ export function eventHintFromText(text: string): string | undefined {
   return undefined;
 }
 
-function whenFromText(text: string): TimeHint | undefined {
-  const when: TimeHint = {};
-  if (/\btomorrow/.test(text)) when.day = "tomorrow";
-  else if (/\btoday/.test(text)) when.day = "today";
-  const weekday = text.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/);
-  if (weekday) {
-    const names = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-    when.day = "weekday";
-    when.weekday = names.indexOf(weekday[1]) as TimeHint["weekday"];
-  }
-  if (/\bmorning/.test(text)) when.part = "morning";
-  else if (/\bafternoon/.test(text)) when.part = "afternoon";
-  else if (/\bevening/.test(text)) when.part = "evening";
-  else if (/\blater/.test(text)) when.part = "later";
-  const dated = calendarDateFromText(text);
-  if (dated) {
-    when.month = dated.month;
-    when.dayOfMonth = dated.dayOfMonth;
-    if (dated.year) when.year = dated.year;
-  }
-  const clock = text.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
-  if (clock) {
-    let hour = Number(clock[1]);
-    const mer = clock[3].toLowerCase();
-    if (mer === "pm" && hour < 12) hour += 12;
-    if (mer === "am" && hour === 12) hour = 0;
-    when.hour = hour;
-    when.minute = clock[2] ? Number(clock[2]) : 0;
-  } else {
-    const bare = text.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\b/);
-    if (bare) {
-      when.hour = Number(bare[1]);
-      when.minute = bare[2] ? Number(bare[2]) : 0;
-    }
-  }
-  return Object.keys(when).length ? when : undefined;
-}
-
 export function durationFromText(text: string, fallback?: number): number | undefined {
-  if (/hour and a half|hour-and-a-half/.test(text)) return 90;
-  const match = text.match(/(\d+)[-\s]*(minute|min|hour|hr|h)/i);
-  if (match) {
-    const value = Number(match[1]);
-    return match[2].toLowerCase().startsWith("h") ? value * 60 : value;
-  }
-  const words: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
-  const word = text.match(/\b(one|two|three|four|five)\b/);
-  if (word && (/hour|hr|make it|actually/.test(text))) {
-    return words[word[1]] * 60;
-  }
-  return fallback;
+  return parseScheduleFromText(text).durationMinutes ?? fallback;
 }
 
 export function classifyIntent(text: string, pending?: ModelIntent): ModelIntent {
   const raw = normalize(text);
+  const schedule = parseScheduleFromText(text);
   const sport = sportFromText(raw);
-  const when = whenFromText(raw);
+  const when = schedule.when;
   const eventHint = eventHintFromText(raw);
+  const spokenDuration = schedule.durationMinutes;
 
   const wordCount = raw.split(/\s+/).filter(Boolean).length;
   const startsNewRequest =
     /^(schedule|find|move|prepare|reorganize|re-organize|what'?s|what is|give|book|add|put|can i|how much|am i)/.test(raw);
   if ((pending?.type === "create_event" || pending?.type === "create_focus_block") && !startsNewRequest) {
-    const duration = durationFromText(raw);
+    const duration = spokenDuration;
     if (duration || when) {
       return {
         ...pending,
         durationMinutes: duration ?? pending.durationMinutes,
         durationRequested: duration ? true : pending.durationRequested,
         when: when ? { ...pending.when, ...when } : pending.when,
+        timingMode: schedule.timingMode ?? pending.timingMode,
+        location: schedule.location ?? pending.location,
       };
     }
   }
   if (pending?.type === "find_time" && !startsNewRequest) {
-    const duration = durationFromText(raw);
+    const duration = spokenDuration;
     if (/more times|more options/.test(raw)) {
       return { ...pending, slotOffset: (pending.slotOffset ?? 0) + 3 };
     }
@@ -111,12 +67,14 @@ export function classifyIntent(text: string, pending?: ModelIntent): ModelIntent
         durationMinutes: duration ?? pending.durationMinutes,
         durationRequested: duration ? true : pending.durationRequested,
         when: when ? { ...pending.when, ...when } : pending.when,
+        timingMode: schedule.timingMode ?? pending.timingMode,
+        location: schedule.location ?? pending.location,
         slotOffset: 0,
       };
     }
   }
   if (pending && !startsNewRequest && wordCount <= 5) {
-    const duration = durationFromText(raw);
+    const duration = spokenDuration;
     if (pending.type === "create_event" && !pending.sport && sport) {
       return { ...pending, sport, when: pending.when ?? when };
     }
@@ -182,17 +140,22 @@ export function classifyIntent(text: string, pending?: ModelIntent): ModelIntent
       type: "clarify",
       question: "What kind of training — swim, bike, run, or strength?",
       when,
-      durationMinutes: durationFromText(raw, 60),
+      durationMinutes: spokenDuration ?? 60,
     };
   }
-  if (/schedule|add|book|put/.test(raw) && (sport || /swim|bike|run|workout/.test(raw))) {
+  if (
+    (/schedule|add|book|put/.test(raw) || (schedule.timingMode === "fixed" && schedule.when?.hour !== undefined)) &&
+    (sport || /swim|bike|run|workout/.test(raw))
+  ) {
     return {
       type: "create_event",
       sport: sport ?? "swim",
       category: "training",
       when: when ?? (/tomorrow/.test(raw) ? { day: "tomorrow" } : undefined),
-      durationMinutes: durationFromText(raw),
-      durationRequested: Boolean(durationFromText(raw)),
+      durationMinutes: spokenDuration ?? schedule.rangeMinutes,
+      durationRequested: Boolean(spokenDuration ?? schedule.rangeMinutes),
+      timingMode: schedule.timingMode,
+      location: schedule.location,
       title: sport === "bike" ? "Bike" : sport === "run" ? "Run" : "Swim",
     };
   }
@@ -201,11 +164,13 @@ export function classifyIntent(text: string, pending?: ModelIntent): ModelIntent
       type: "create_event",
       title: titleFromRequest(text),
       when: when ?? (/tomorrow/.test(raw) ? { day: "tomorrow" } : undefined),
-      durationMinutes: durationFromText(raw),
+      durationMinutes: spokenDuration,
+      timingMode: schedule.timingMode,
+      location: schedule.location,
       category: "personal",
     };
   }
-  if (/some work time|some time to work|a bit of (work )?time|give me some (work )?time/.test(raw) && !durationFromText(raw)) {
+  if (/some work time|some time to work|a bit of (work )?time|give me some (work )?time/.test(raw) && !spokenDuration) {
     return {
       type: "clarify",
       question: "How much time do you need?",
@@ -215,20 +180,22 @@ export function classifyIntent(text: string, pending?: ModelIntent): ModelIntent
   if (/three hours|3 hours|deep work|focus|work on pepinho/.test(raw) && /give|block|protect|work on|nobody bothers/.test(raw)) {
     return {
       type: "create_focus_block",
-      durationMinutes: durationFromText(raw, 180),
+      durationMinutes: spokenDuration ?? 180,
       when: when ?? { part: "working" },
+      timingMode: schedule.timingMode,
       title: /pepinho/.test(raw) ? "Pepinho focus" : "Focus block",
     };
   }
   if (
     /find|give|block|when.*(free|meet|time)|90 minutes|can i (swim|train|bike)|time to train|before marcus/.test(raw)
   ) {
-    const spokenDuration = durationFromText(raw);
     return {
       type: "find_time",
       durationMinutes: spokenDuration ?? (/marcus|meet/.test(raw) ? 45 : /train|swim|bike/.test(raw) ? 60 : 90),
       durationRequested: Boolean(spokenDuration),
       when: when ?? { part: "working" },
+      timingMode: schedule.timingMode ?? "search",
+      location: schedule.location,
       untilHint: /before marcus|before the meeting/.test(raw) ? "marcus" : undefined,
       eventHint: /marcus/.test(raw) ? "marcus" : eventHint,
     };

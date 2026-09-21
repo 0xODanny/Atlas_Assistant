@@ -1,4 +1,4 @@
-import type { ModelIntent, ModelIntentType } from "../types/assistant";
+import type { ModelIntent, ModelIntentType, TimingMode } from "../types/assistant";
 
 const TYPES: ModelIntentType[] = [
   "answer",
@@ -55,6 +55,12 @@ export function parseModelIntent(raw: unknown): ParseResult<ModelIntent> {
   if (typeof value.capability === "string" && capabilities.includes(value.capability as (typeof capabilities)[number])) {
     intent.capability = value.capability as ModelIntent["capability"];
   }
+  if (typeof value.location === "string" && value.location.trim()) intent.location = value.location.trim();
+  if (value.durationRequested === true) intent.durationRequested = true;
+  const timingModes = ["fixed", "flexible", "search"] as const;
+  if (typeof value.timingMode === "string" && timingModes.includes(value.timingMode as TimingMode)) {
+    intent.timingMode = value.timingMode as TimingMode;
+  }
 
   const when = asRecord(value.when);
   if (when) {
@@ -64,6 +70,8 @@ export function parseModelIntent(raw: unknown): ParseResult<ModelIntent> {
     if (typeof when.part === "string") intent.when.part = when.part as NonNullable<ModelIntent["when"]>["part"];
     if (typeof when.hour === "number") intent.when.hour = when.hour;
     if (typeof when.minute === "number") intent.when.minute = when.minute;
+    if (typeof when.endHour === "number") intent.when.endHour = when.endHour;
+    if (typeof when.endMinute === "number") intent.when.endMinute = when.endMinute;
   }
 
   if (intent.type === "clarify" && !intent.question?.trim()) {
@@ -92,6 +100,9 @@ export const MODEL_INTENT_SCHEMA = {
       "untilHint",
       "question",
       "capability",
+      "timingMode",
+      "location",
+      "durationRequested",
       "when",
     ],
     properties: {
@@ -110,16 +121,21 @@ export const MODEL_INTENT_SCHEMA = {
       untilHint: { type: ["string", "null"] },
       question: { type: ["string", "null"] },
       capability: { type: ["string", "null"], enum: ["weather", "memory", "telegram", null] },
+      timingMode: { type: ["string", "null"], enum: ["fixed", "flexible", "search", null] },
+      location: { type: ["string", "null"] },
+      durationRequested: { type: ["boolean", "null"] },
       when: {
         type: ["object", "null"],
         additionalProperties: false,
-        required: ["day", "weekday", "part", "hour", "minute"],
+        required: ["day", "weekday", "part", "hour", "minute", "endHour", "endMinute"],
         properties: {
           day: { type: ["string", "null"], enum: ["today", "tomorrow", "weekday", null] },
           weekday: { type: ["number", "null"] },
           part: { type: ["string", "null"], enum: ["morning", "afternoon", "evening", "later", "working", null] },
           hour: { type: ["number", "null"] },
           minute: { type: ["number", "null"] },
+          endHour: { type: ["number", "null"] },
+          endMinute: { type: ["number", "null"] },
         },
       },
     },

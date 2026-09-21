@@ -14,6 +14,7 @@ const newsreader = Newsreader({
   variable: "--font-display",
   subsets: ["latin"],
   style: ["normal", "italic"],
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
@@ -35,7 +36,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#12110e",
+  themeColor: "#F7F7F8",
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({

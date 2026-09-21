@@ -5,6 +5,7 @@ import { diagnoseMissingSlot } from "../calendar/noSlot";
 import { durationSlotsFromWindows } from "../calendar/slotOptions";
 import {
   describeWorkoutBufferAvailability,
+  findPlanningConflict,
   isRecognizedWorkout,
   planningConflicts,
   planningFreeTimeOptions,
@@ -54,6 +55,7 @@ import {
 import { dayEventsFor } from "../calendar/dayAgenda";
 import { buildDaySummaryMessage, calendarReadFailed } from "./daySummary";
 import { capabilityAvailable, capabilityCopy } from "./capabilities";
+import { isFixedTiming, rangeDurationMinutes } from "./parseSchedule";
 import { clipRangeToNow, resolveAnchorDay, resolveExactStart, resolveSearchRange } from "./resolveTime";
 
 function createDestination(context: AssistantContext): WriteDestination {
@@ -125,6 +127,22 @@ function proposeCreateEvent(
 }
 
 
+function describeConflict(
+  start: string,
+  end: string,
+  context: AssistantContext,
+  timezone: string,
+): string {
+  const conflict = findPlanningConflict(start, end, others(context), planning(context));
+  if (conflict?.kind === "event") {
+    return `${conflict.event.title} (${formatRange(conflict.event.start, conflict.event.end, timezone)})`;
+  }
+  if (conflict?.kind === "workout_buffer") {
+    return `the post-workout buffer after ${conflict.workout.title} (through ${formatClock(new Date(conflict.bufferEnd).toISOString(), timezone)})`;
+  }
+  return "another event";
+}
+
 function fulfillWorkoutCreate(
   context: AssistantContext,
   intent: ModelIntent,
@@ -133,9 +151,23 @@ function fulfillWorkoutCreate(
   title: string,
   sport: Sport | undefined,
 ): AssistantResponse {
+  const rangeMinutes = rangeDurationMinutes(intent.when);
+  if (
+    rangeMinutes !== undefined &&
+    intent.durationRequested &&
+    intent.durationMinutes !== undefined &&
+    intent.durationMinutes !== rangeMinutes
+  ) {
+    return {
+      intentType: "clarify",
+      message: `You asked for ${formatDuration(rangeMinutes)} from the time range and ${formatDuration(intent.durationMinutes)} as the duration. Which should I use?`,
+      actions: [],
+      pending: intent,
+    };
+  }
   const duration = resolveWorkoutDuration({
-    requestedMinutes: intent.durationMinutes,
-    durationRequested: intent.durationRequested,
+    requestedMinutes: rangeMinutes ?? intent.durationMinutes,
+    durationRequested: rangeMinutes !== undefined || intent.durationRequested,
     profile: context.profile,
     events: context.events,
     workouts: context.workouts,
@@ -151,7 +183,7 @@ function fulfillWorkoutCreate(
     durationRequested: intent.durationRequested,
   };
   const exact = exactWorkoutStart(intent.when, timezone, now);
-  if (exact && intent.when?.hour !== undefined) {
+  if (exact && isFixedTiming(intent)) {
     const start = exact.toISOString();
     const end = addMinutes(exact, duration.minutes).toISOString();
     if (createEventAlreadyExists(context.events, title, start)) {
@@ -170,23 +202,22 @@ function fulfillWorkoutCreate(
         events: context.events,
         workouts: context.workouts,
         duration,
-        when: { ...intent.when, hour: undefined, minute: undefined },
+        when: { ...intent.when, hour: undefined, minute: undefined, endHour: undefined, endMinute: undefined },
         sport,
       });
       return {
         intentType: "create_event",
-        message: `I will not book over an existing event at ${formatClock(start, timezone)}. ${
-          options.length
-            ? "Here are conflict-free options."
-            : "I could not find another open window. I can try a different day or duration."
+        message: `The requested ${formatRange(start, end, timezone)} conflicts with ${describeConflict(start, end, context, timezone)}. I will not book over that event, and I will not change that start time.${
+          options.length ? " Nearby conflict-free options:" : " I could not find another open window."
         }`,
         actions: [],
         choices: options.map((option) => ({
           id: `slot:${option.start}`,
-          label: option.recommended ? `${option.label} · Recommended` : option.label,
+          label: option.label,
           start: option.start,
           end: option.end,
           reason: option.reason,
+          recommended: option.recommended,
         })),
         pending,
       };
@@ -204,6 +235,7 @@ function fulfillWorkoutCreate(
           durationMinutes: duration.minutes,
           category: "training",
           sport,
+          location: intent.location,
           label: `Suggested ${title.toLowerCase()}`,
         }),
       ],
@@ -253,10 +285,11 @@ function fulfillWorkoutCreate(
     ],
     choices: options.map((option) => ({
       id: `slot:${option.start}`,
-      label: option.recommended ? `${option.label} · Recommended` : option.label,
+      label: option.label,
       start: option.start,
       end: option.end,
       reason: option.reason,
+      recommended: option.recommended,
     })),
     pending,
   };
@@ -660,7 +693,7 @@ export function fulfillIntent(intent: ModelIntent, context: AssistantContext): A
       ],
       choices: choices.map((choice, index) => ({
         ...choice,
-        label: index === 0 ? `${choice.label} · Recommended` : choice.label,
+        recommended: index === 0,
       })),
       pending,
     };
@@ -789,15 +822,29 @@ export function fulfillIntent(intent: ModelIntent, context: AssistantContext): A
     if (sport || intent.category === "training") {
       return fulfillWorkoutCreate(context, intent, now, tz, title, sport);
     }
-    const durationMinutes = intent.durationMinutes ?? 60;
+    const rangeMinutes = rangeDurationMinutes(intent.when);
+    if (
+      rangeMinutes !== undefined &&
+      intent.durationRequested &&
+      intent.durationMinutes !== undefined &&
+      intent.durationMinutes !== rangeMinutes
+    ) {
+      return {
+        intentType: "clarify",
+        message: `You asked for ${formatDuration(rangeMinutes)} from the time range and ${formatDuration(intent.durationMinutes)} as the duration. Which should I use?`,
+        actions: [],
+        pending: intent,
+      };
+    }
+    const durationMinutes = rangeMinutes ?? intent.durationMinutes ?? 60;
     const exact = resolveExactStart(intent.when, tz, now, now);
-    if (exact && intent.when?.hour !== undefined) {
+    if (exact && isFixedTiming(intent)) {
       const start = exact.toISOString();
       const end = addMinutes(exact, durationMinutes).toISOString();
       if (planningConflicts(start, end, others(context), planning(context))) {
         return {
           intentType: "create_event",
-          message: `I will not book over an existing event at ${formatClock(start, tz)}. Here are conflict-free options.`,
+          message: `The requested ${formatRange(start, end, tz)} conflicts with ${describeConflict(start, end, context, tz)}. I will not book over that event, and I will not change that start time. Here are conflict-free options.`,
           actions: [],
           choices: alternativeWindows(context, durationMinutes),
           pending: { ...intent, title, durationMinutes },
@@ -813,6 +860,7 @@ export function fulfillIntent(intent: ModelIntent, context: AssistantContext): A
             end,
             durationMinutes,
             category: intent.category ?? "personal",
+            location: intent.location,
           }),
         ],
         pending: { ...intent, title, durationMinutes },

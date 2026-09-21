@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { formatScheduledEventWhen } from "@/lib/format";
+import { formatMinutesShort, formatRange } from "@/lib/format";
 import { presentEventRow } from "@/lib/present/event";
 import { isUpcomingMeeting } from "@/lib/calendar/meetings";
 import { actionLabelForCategory, shouldOfferPrepareAction } from "@/lib/prepare/content";
@@ -34,34 +34,43 @@ export function EventRow({
   const meetingEligible = event.category !== "meeting" || !now || isUpcomingMeeting(event, now);
   const showPrepare = onPrepare && meetingEligible && shouldOfferPrepareAction({ event, workout, meeting });
   const row = presentEventRow({ event, timezone, workout, meeting, selfName });
-  const time = now ? formatScheduledEventWhen(event, timezone, now) : row.time;
-  const summary = [row.meta, row.detail].filter(Boolean).join(" · ");
+  const time = event.allDay ? row.time : formatRange(event.start, event.end, timezone);
+  const summary = [row.meta, event.location && !/^https?:\/\//i.test(event.location) ? event.location : undefined]
+    .filter(Boolean)
+    .filter((value, index, list) => list.indexOf(value) === index)
+    .join(" · ");
 
   return (
-    <article className="flex gap-3 py-2.5">
-      <CategoryMark category={event.category} />
-      <div className="flex min-w-0 flex-1 flex-col gap-2 md:flex-row md:items-start md:justify-between md:gap-4">
-        <div className="min-w-0">
-          <p className="text-[13px] text-[var(--muted)]">{time}</p>
-          <h3 className="text-[16px] font-medium tracking-tight">{row.title}</h3>
-          {summary ? <p className="mt-0.5 text-[13px] leading-5 text-[var(--muted)]">{summary}</p> : null}
-        </div>
-        <div className="flex flex-wrap gap-1.5 md:shrink-0 md:justify-end">
-          {showPrepare ? (
-            <button type="button" className="btn-quiet" onClick={onPrepare}>
-              {actionLabelForCategory(event.category)}
-            </button>
-          ) : null}
-          {onMove ? (
-            <button type="button" className="btn-quiet" onClick={onMove}>
-              Move
-            </button>
-          ) : null}
-          <Link href={`/events/${encodeURIComponent(event.id)}`} className="btn-quiet">
-            Details
+    <article className="flex gap-3 border-b border-[var(--atlas-line)] py-3.5">
+      <CategoryMark event={event} />
+      <div className="min-w-0 flex-1">
+        <p className="text-[12px] tracking-wide text-[var(--atlas-meta)]">{time}</p>
+        <h3 className="mt-0.5 text-[16px] font-medium tracking-tight">
+          <Link href={`/events/${encodeURIComponent(event.id)}`} className="hover:text-[var(--atlas-plum)]">
+            {row.title}
           </Link>
-        </div>
+        </h3>
+        {summary ? <p className="mt-0.5 text-[13px] leading-5 text-[var(--atlas-muted)]">{summary}</p> : null}
+        {showPrepare || onMove ? (
+          <div className="mt-1 flex flex-wrap gap-4">
+            {showPrepare ? (
+              <button type="button" className="btn-quiet min-h-10 text-[13px]" onClick={onPrepare}>
+                {actionLabelForCategory(event.category)}
+              </button>
+            ) : null}
+            {onMove ? (
+              <button type="button" className="btn-quiet min-h-10 text-[13px]" onClick={onMove}>
+                Move
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
+      {event.allDay ? null : (
+        <p className="shrink-0 text-[12px] text-[var(--atlas-muted)]">{formatMinutesShort(
+          Math.max(0, Math.round((new Date(event.end).getTime() - new Date(event.start).getTime()) / 60_000)),
+        )}</p>
+      )}
     </article>
   );
 }

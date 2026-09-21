@@ -182,7 +182,7 @@ export function MoveSheet() {
                       key={suggestion.start}
                       type="button"
                       aria-pressed={selected}
-                      className={selected ? "btn-solid justify-between" : "btn-quiet justify-between"}
+                      className="choice-row"
                       onClick={() => selectSuggestion(suggestion.start)}
                     >
                       <span>{suggestion.label}</span>

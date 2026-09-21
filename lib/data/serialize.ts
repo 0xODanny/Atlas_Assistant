@@ -1,5 +1,5 @@
 import { rematchPersistedEvents } from "../calendar/busy";
-import { normalizeProfileHours } from "../calendar/hours";
+import { migrateProfile } from "./profileMigration";
 import { stampSeedDemoFlags } from "./sample";
 import type { AppState } from "./state";
 
@@ -22,7 +22,7 @@ export function deserializeState(raw: string): AppState | null {
     const state = parsed as unknown as AppState;
     return stampSeedDemoFlags({
       ...state,
-      profile: normalizeProfileHours(state.profile),
+      profile: migrateProfile(state.profile),
       events: rematchPersistedEvents(state.events),
     });
   } catch {

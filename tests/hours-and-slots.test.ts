@@ -188,6 +188,7 @@ test("complete empty scoped sync can remove an in-range Google event; incomplete
 test("workout recommendations put the recommended option first", () => {
   const result = fulfillIntent(classifyIntent("Schedule a swim tomorrow."), ctx());
   assert.ok(result.choices && result.choices.length >= 1);
-  assert.match(result.choices[0]!.label, /Recommended/);
+  assert.equal(result.choices[0]!.recommended, true);
+  assert.doesNotMatch(result.choices[0]!.label, /Recommended/);
   assert.match(result.message, /planning time, not a calendar event/);
 });

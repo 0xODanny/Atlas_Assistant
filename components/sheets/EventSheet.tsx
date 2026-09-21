@@ -81,8 +81,16 @@ export function EventSheet() {
   }
 
   return (
-    <Sheet title={editing ? "Edit event" : "New event"} onClose={closeSheet}>
-      <form className="flex flex-col gap-4" onSubmit={submit}>
+    <Sheet
+      title={editing ? "Edit event" : "New event"}
+      onClose={closeSheet}
+      footer={
+        <button type="submit" form="atlas-event-form" className="btn-solid w-full">
+          {editing ? "Save changes" : "Add event"}
+        </button>
+      }
+    >
+      <form id="atlas-event-form" className="flex flex-col gap-3" onSubmit={submit}>
         <label className="field">
           <span>Title</span>
           <input required value={title} onChange={(event) => setTitle(event.target.value)} />
@@ -105,7 +113,7 @@ export function EventSheet() {
           </label>
         )}
         {editingAllDay ? (
-          <p className="text-sm text-[var(--muted)]">Keep: All day</p>
+          <p className="setting-note">Keep: All day</p>
         ) : (
           <div className="grid grid-cols-2 gap-3">
             <label className="field">
@@ -154,7 +162,7 @@ export function EventSheet() {
           <span>Description</span>
           <textarea rows={3} value={description} onChange={(event) => setDescription(event.target.value)} />
         </label>
-        <label className="flex items-center gap-3 text-sm">
+        <label className="flex min-h-11 items-center gap-3 text-[16px]">
           <input
             type="checkbox"
             checked={preparationRequired}
@@ -173,9 +181,6 @@ export function EventSheet() {
             />
           </label>
         ) : null}
-        <button type="submit" className="btn-solid mt-2">
-          {editing ? "Save changes" : "Add event"}
-        </button>
       </form>
     </Sheet>
   );

@@ -5,26 +5,41 @@ import {
   formatDurationAdjective,
   formatDurationMinutes,
   formatEventTiming,
+  formatFreeSpan,
+  formatHoursMinutes,
   formatMinutesShort,
   formatRange,
+  formatRangeCompact,
+  formatRelativeDay,
   formatRelativeDayDate,
   formatScheduledEventWhen,
   formatSuggestionSlot,
   formatTimezoneLabel,
   indefiniteDurationAdjective,
 } from "../lib/format";
+import { formatWeekRange } from "../lib/calendar/weekOverview";
 
 const TZ = "America/New_York";
 
 test("compact rows use min, details use minutes, ranges use an en dash", () => {
   assert.equal(formatMinutesShort(60), "60 min");
   assert.equal(formatMinutesShort(45), "45 min");
+  assert.equal(formatHoursMinutes(30), "30 min");
+  assert.equal(formatHoursMinutes(60), "1 hr");
+  assert.equal(formatHoursMinutes(150), "2 hr 30 min");
+  assert.equal(formatHoursMinutes(255), "4 hr 15 min");
+  assert.equal(formatHoursMinutes(345), "5 hr 45 min");
+  assert.equal(formatFreeSpan(150), "2 hr 30 min free");
   assert.equal(formatDurationMinutes(60), "60 minutes");
   assert.equal(formatDuration(60), "1 hour");
   assert.equal(formatDuration(45), "45 minutes");
   assert.equal(
     formatRange("2026-09-17T11:30:00.000Z", "2026-09-17T12:30:00.000Z", TZ),
     "7:30 AM–8:30 AM",
+  );
+  assert.equal(
+    formatRangeCompact("2026-09-21T17:45:00.000Z", "2026-09-21T19:15:00.000Z", TZ),
+    "1:45–3:15 PM",
   );
 });
 
@@ -55,6 +70,11 @@ test("suggestion and event labels include relative day, date, and in-progress", 
     "Today, Thu Sep 17 · 2:30 PM–4:00 PM · In progress",
   );
   assert.match(formatTimezoneLabel(TZ, now), /America\/New_York/);
+  assert.equal(formatRelativeDay("2026-09-17T18:30:00.000Z", TZ, now), "Today");
+  assert.equal(formatRelativeDay("2026-09-18T13:00:00.000Z", TZ, now), "Tomorrow");
+  assert.equal(formatWeekRange(new Date("2026-09-21T16:00:00.000Z"), TZ), "Sep 20–26");
+  assert.equal(formatWeekRange(new Date("2026-10-01T16:00:00.000Z"), TZ), "Sep 27–Oct 3");
+  assert.equal(formatWeekRange(new Date("2027-01-01T16:00:00.000Z"), TZ), "Dec 27, 2026–Jan 2, 2027");
 });
 
 test("event timing switches from countdown to remaining, then clears", () => {

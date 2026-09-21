@@ -72,6 +72,26 @@ export function formatRange(startIso: string, endIso: string, timeZone: string):
   return `${formatClock(startIso, timeZone)}–${formatClock(endIso, timeZone)}`;
 }
 
+/** Compact shared-meridian range: "1:45–3:15 PM". */
+export function formatRangeCompact(startIso: string, endIso: string, timeZone: string): string {
+  const startClock = formatClock(startIso, timeZone);
+  const endClock = formatClock(endIso, timeZone);
+  const startMatch = startClock.match(/^(.+?)\s*([AP]M)$/);
+  const endMatch = endClock.match(/^(.+?)\s*([AP]M)$/);
+  if (startMatch?.[1] && endMatch?.[1] && startMatch[2] === endMatch[2]) {
+    return `${startMatch[1]}–${endMatch[1]} ${endMatch[2]}`;
+  }
+  return `${startClock}–${endClock}`;
+}
+
+export function formatRelativeDay(iso: string, timeZone: string, now: Date): string {
+  if (sameZonedDay(now, new Date(iso), timeZone)) return "Today";
+  if (sameZonedDay(addDays(startOfZonedDay(timeZone, now), 1), new Date(iso), timeZone)) {
+    return "Tomorrow";
+  }
+  return formatWeekdayMonthDay(iso, timeZone);
+}
+
 export function formatClockNatural(iso: string, timeZone: string): string {
   const { hour, minute } = zonedParts(timeZone, new Date(iso));
   const mer = hour < 12 ? "AM" : "PM";
@@ -141,6 +161,20 @@ export function formatMinutesShort(minutes: number): string {
   return `${minutes} min`;
 }
 
+/** Human free-time spans: "30 min", "1 hr", "2 hr 30 min". */
+export function formatHoursMinutes(minutes: number): string {
+  const rounded = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(rounded / 60);
+  const remainder = rounded % 60;
+  if (hours === 0) return `${remainder} min`;
+  if (remainder === 0) return hours === 1 ? "1 hr" : `${hours} hr`;
+  return `${hours} hr ${remainder} min`;
+}
+
+export function formatFreeSpan(minutes: number): string {
+  return `${formatHoursMinutes(minutes)} free`;
+}
+
 /** Adjectival duration: "3-hour", "45-minute". */
 export function formatDurationAdjective(minutes: number): string {
   if (minutes % 60 === 0) {
@@ -166,12 +200,87 @@ export function formatCompactHours(minutes: number): string {
   return `${rounded}h`;
 }
 
+export function formatUninterruptedSpan(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const remainder = Math.round(minutes % 60);
+  if (hours === 0) {
+    return `${remainder} uninterrupted ${remainder === 1 ? "minute" : "minutes"}`;
+  }
+  if (remainder === 0) {
+    return `${hours} uninterrupted ${hours === 1 ? "hour" : "hours"}`;
+  }
+  return `${hours} hours ${remainder} minutes uninterrupted`;
+}
+
+export function remainingOpenLabel(startIso: string, endIso: string, timezone: string): string {
+  const end = zonedParts(timezone, new Date(endIso));
+  if (end.hour === 0 && end.minute === 0) return "Rest of day open";
+  return formatRange(startIso, endIso, timezone);
+}
+
+export function formatExactDuration(minutes: number): string {
+  return formatHoursMinutes(minutes);
+}
+
+export function firstName(name: string): string {
+  return name.split(" ")[0] || name;
+}
+
 export function greetingForNow(nowIso: string, timeZone: string, name: string): string {
   const hour = zonedParts(timeZone, new Date(nowIso)).hour;
-  const first = name.split(" ")[0] || name;
+  const first = firstName(name);
   if (hour < 12) return `Good morning, ${first}`;
   if (hour < 17) return `Good afternoon, ${first}`;
   return `Good evening, ${first}`;
+}
+
+export function greetingEditorial(nowIso: string, timeZone: string, name: string): string {
+  const hour = zonedParts(timeZone, new Date(nowIso)).hour;
+  const first = firstName(name);
+  if (hour < 12) return `Morning, ${first}.`;
+  if (hour < 17) return `Afternoon, ${first}.`;
+  return `Evening, ${first}.`;
+}
+
+export function formatFullDateUpper(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone,
+  })
+    .format(new Date(iso))
+    .toUpperCase();
+}
+
+export function formatMonthYear(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone,
+  }).format(new Date(iso));
+}
+
+export function formatMonth(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    timeZone,
+  }).format(new Date(iso));
+}
+
+export function formatMonthDay(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    timeZone,
+  }).format(new Date(iso));
+}
+
+export function formatYear(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    timeZone,
+  }).format(new Date(iso));
 }
 
 export function greetingOnly(nowIso: string, timeZone: string): string {

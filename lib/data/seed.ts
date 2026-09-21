@@ -2,6 +2,7 @@ import { defaultSchedulingHours, toWorkingHours } from "../calendar/hours";
 import { DEFAULT_AFTER_WORKOUT_BUFFER_MINUTES } from "../calendar/transitionBuffer";
 import { DEFAULT_CALENDAR_ID, DEFAULT_TIMEZONE } from "../config";
 import { addDays, addMinutes, atZonedTime } from "../time";
+import { CURRENT_SEED_DISPLAY_NAME, PROFILE_SCHEMA_VERSION } from "./profileMigration";
 import type { AppState } from "./state";
 
 export function createSeedState(now = new Date()): AppState {
@@ -17,7 +18,8 @@ export function createSeedState(now = new Date()): AppState {
 
   const profile = {
     id: "user_local",
-    displayName: "Daniel",
+    displayName: CURRENT_SEED_DISPLAY_NAME,
+    schemaVersion: PROFILE_SCHEMA_VERSION,
     timezone,
     schedulingHours: defaultSchedulingHours(),
     workingHours: toWorkingHours(defaultSchedulingHours().focus),
@@ -68,7 +70,7 @@ export function createSeedState(now = new Date()): AppState {
       end: meetingEnd.toISOString(),
       location: "Google Meet",
       participants: [
-        { id: "person_self", name: "Daniel", role: "organizer" as const },
+        { id: "person_self", name: "Danny", role: "organizer" as const },
         { id: "person_marcus", name: "Marcus", role: "attendee" as const },
       ],
       privacy: "shared" as const,

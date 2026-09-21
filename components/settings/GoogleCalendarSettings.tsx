@@ -62,9 +62,9 @@ export function GoogleCalendarSettings() {
         connectedLabel={statusLabel}
         disconnectedLabel={query === "not_configured" ? "Not configured" : "Not connected"}
       />
-      {google.syncError ? <p className="text-sm text-[var(--muted)]">{google.syncError}</p> : null}
+      {google.syncError ? <p className="setting-note text-[var(--muted)]">{google.syncError}</p> : null}
       {google.lastSyncedAt ? (
-        <p className="text-sm text-[var(--muted)]">
+        <p className="setting-note text-[var(--muted)]">
           Last synced {new Date(google.lastSyncedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
           {googleSyncing ? " · Refreshing…" : ""}
         </p>
@@ -88,7 +88,7 @@ export function GoogleCalendarSettings() {
                 Enable writes
               </a>
             ) : (
-              <p className="self-center text-sm text-[var(--muted)]">Writes enabled</p>
+              <p className="self-center setting-note text-[var(--muted)]">Writes enabled</p>
             )}
           </>
         )}
@@ -100,7 +100,7 @@ export function GoogleCalendarSettings() {
           <ul className="mt-2 space-y-2">
             {google.calendars.map((calendar) => (
               <li key={calendar.id}>
-                <label className="flex items-center gap-2 text-sm">
+                <label className="flex min-h-11 items-center gap-3 text-[16px]">
                   <input
                     type="checkbox"
                     checked={calendar.included}
@@ -111,7 +111,7 @@ export function GoogleCalendarSettings() {
                       void setGoogleCalendars(next.filter((item) => item.included).map((item) => item.id));
                     }}
                   />
-                  <span>
+                  <span className="min-w-0" style={{ overflowWrap: "anywhere" }}>
                     {calendar.summary}
                     {calendar.primary ? " · Primary" : ""}
                   </span>
@@ -126,9 +126,9 @@ export function GoogleCalendarSettings() {
         <div className="mt-4">
           <p className="section-kicker">Default write calendar</p>
           {writeConfigError ? (
-            <p className="mt-2 text-sm text-[var(--muted)]">{writeConfigError}</p>
+            <p className="mt-2 setting-note text-[var(--muted)]">{writeConfigError}</p>
           ) : writableCalendars.length > 1 ? (
-            <label className="mt-2 flex flex-col gap-1 text-sm">
+            <label className="mt-2 flex flex-col gap-1 setting-note">
               <select
                 value={writeDestination.provider === "google" ? writeDestination.calendarId : ""}
                 onChange={(event) => setDefaultWriteCalendar(event.target.value)}
@@ -142,7 +142,7 @@ export function GoogleCalendarSettings() {
               </select>
             </label>
           ) : writeDestination.provider === "google" ? (
-            <p className="mt-2 text-sm text-[var(--muted)]">
+            <p className="mt-2 setting-note text-[var(--muted)]">
               {google.calendars?.find((calendar) => calendar.id === writeDestination.calendarId)?.summary ??
                 writeDestination.calendarId}
             </p>
@@ -151,7 +151,7 @@ export function GoogleCalendarSettings() {
       ) : null}
 
       {query === "error" ? (
-        <p className="mt-2 text-sm text-[var(--muted)]">Google Calendar could not connect. Local events are unchanged.</p>
+        <p className="mt-2 setting-note text-[var(--muted)]">Google Calendar could not connect. Local events are unchanged.</p>
       ) : null}
     </div>
   );

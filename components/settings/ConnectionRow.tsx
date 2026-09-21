@@ -1,4 +1,5 @@
 import type { ConnectionStatus } from "@/lib/types/profile";
+import { SettingRow } from "../ui/SettingRow";
 
 export function ConnectionRow({
   name,
@@ -20,9 +21,9 @@ export function ConnectionRow({
           ? "Connecting"
           : "Connection error";
   return (
-    <div className="flex items-center justify-between gap-4 py-3">
-      <p>{name}</p>
-      <p className="text-sm text-[var(--muted)]">{label}</p>
-    </div>
+    <SettingRow
+      label={name}
+      value={label}
+    />
   );
 }

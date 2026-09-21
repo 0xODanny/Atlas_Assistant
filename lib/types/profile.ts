@@ -29,9 +29,22 @@ export type Routine = {
   time: string;
 };
 
+export type SemanticEventKind =
+  | "call"
+  | "meeting"
+  | "workout"
+  | "focus"
+  | "personal"
+  | "relax"
+  | "travel"
+  | "other";
+
+export type EventColorOverrides = Partial<Record<SemanticEventKind, string>>;
+
 export type UserProfile = {
   id: string;
   displayName: string;
+  schemaVersion?: number;
   timezone: string;
   workingHours: WorkingHours;
   schedulingHours?: SchedulingHours;
@@ -41,6 +54,7 @@ export type UserProfile = {
   routines: Routine[];
   trainingPreferences: TrainingPreferences;
   afterWorkoutBufferMinutes?: number;
+  eventColorOverrides?: EventColorOverrides;
   showSampleData?: boolean;
   sampleDataExplicit?: boolean;
   createdAt: string;

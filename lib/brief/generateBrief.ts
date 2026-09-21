@@ -1,7 +1,7 @@
 import { findFreeTime, suggestFocusWindow, totalOpenMinutes } from "../calendar/freeTime";
 import { resolveScheduleHours } from "../calendar/hours";
 import { planningFreeTimeOptions } from "../calendar/transitionBuffer";
-import { eventDurationMinutes, formatAllDayLabel, formatClock, formatCompactHours, formatRange, greetingOnly } from "../format";
+import { eventDurationMinutes, formatAllDayLabel, formatClock, formatExactDuration, formatHoursMinutes, formatUninterruptedSpan, greetingOnly, remainingOpenLabel } from "../format";
 import { participantSummary, presentEventRow } from "../present/event";
 import { isUpcomingMeeting } from "../calendar/meetings";
 import { linkedMeeting, linkedWorkout } from "../prepare/content";
@@ -82,7 +82,7 @@ function briefEventLine(input: {
   const minutes = eventDurationMinutes(event.start, event.end);
   let meta = row.meta;
   if (!event.allDay && event.category === "meeting" && people) {
-    meta = `${minutes} min · ${people}`;
+    meta = `${formatHoursMinutes(minutes)} · ${people}`;
   }
 
   return {
@@ -161,13 +161,12 @@ export function generateBrief(input: {
   );
 
   if (bestFocus) {
-    const hours = Math.round(bestFocus.minutes / 60);
     timeline.push({
       kind: "focus",
       start: bestFocus.start,
-      timeLabel: formatRange(bestFocus.start, bestFocus.end, profile.timezone),
+      timeLabel: remainingOpenLabel(bestFocus.start, bestFocus.end, profile.timezone),
       heading: "BEST FOCUS WINDOW",
-      lines: [`${hours} uninterrupted ${hours === 1 ? "hour" : "hours"}.`],
+      lines: [`${formatUninterruptedSpan(bestFocus.minutes)}.`],
     });
     timeline.sort((left, right) => left.start.localeCompare(right.start));
   }
@@ -177,7 +176,7 @@ export function generateBrief(input: {
     greeting: greetingOnly(input.now.toISOString(), profile.timezone),
     eventCount: todaysEvents.length,
     openMinutes: totalOpenMinutes(windows),
-    summary: `${todaysEvents.length} ${todaysEvents.length === 1 ? "event" : "events"} today · approximately ${formatCompactHours(totalOpenMinutes(windows))} open`,
+    summary: `${todaysEvents.length} ${todaysEvents.length === 1 ? "event" : "events"} today · ${formatExactDuration(totalOpenMinutes(windows))} open`,
     timeline,
     items,
     bestFocus,

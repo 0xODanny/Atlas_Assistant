@@ -1,30 +1,42 @@
 "use client";
 
+import { useEffect } from "react";
 import type { ReactNode } from "react";
+import { BackControl } from "../shell/BackControl";
 
 type SheetProps = {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  footer?: ReactNode;
 };
 
-export function Sheet({ title, onClose, children }: SheetProps) {
+export function Sheet({ title, onClose, children, footer }: SheetProps) {
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center">
-      <button
-        type="button"
-        aria-label="Close"
-        className="absolute inset-0 bg-black/50"
-        onClick={onClose}
-      />
-      <div className="relative max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-[var(--surface)] px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom)+var(--tg-safe-bottom,0px))] pt-4 md:max-w-md md:rounded-2xl">
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <h2 className="font-[family-name:var(--font-display)] text-2xl">{title}</h2>
-          <button type="button" className="btn-quiet" onClick={onClose}>
-            Close
-          </button>
-        </div>
-        {children}
+    <div className="atlas-sheet" data-atlas-sheet>
+      <button type="button" aria-label="Close" className="atlas-sheet-backdrop" onClick={onClose} />
+      <div className="atlas-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="atlas-sheet-title">
+        <header className="atlas-sheet-header">
+          <div className="min-w-0">
+            <BackControl onClick={onClose} />
+            <h2 id="atlas-sheet-title" className="section-title mt-1">
+              {title}
+            </h2>
+          </div>
+        </header>
+        <div className="atlas-sheet-scroll">{children}</div>
+        {footer ? <div className="atlas-sheet-footer">{footer}</div> : null}
       </div>
     </div>
   );
