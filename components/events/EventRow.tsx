@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import { formatMinutesShort, formatRange } from "@/lib/format";
+import { eventDetailHref, eventFromPath } from "@/lib/navigation/back";
 import { presentEventRow } from "@/lib/present/event";
 import { isUpcomingMeeting } from "@/lib/calendar/meetings";
 import { actionLabelForCategory, shouldOfferPrepareAction } from "@/lib/prepare/content";
@@ -31,6 +33,12 @@ export function EventRow({
   onMove,
   now,
 }: EventRowProps) {
+  const from = eventFromPath(usePathname());
+  const searchParams = useSearchParams();
+  const eventHref = eventDetailHref(event.id, from, {
+    view: searchParams.get("view"),
+    date: searchParams.get("date"),
+  });
   const meetingEligible = event.category !== "meeting" || !now || isUpcomingMeeting(event, now);
   const showPrepare = onPrepare && meetingEligible && shouldOfferPrepareAction({ event, workout, meeting });
   const row = presentEventRow({ event, timezone, workout, meeting, selfName });
@@ -46,7 +54,7 @@ export function EventRow({
       <div className="min-w-0 flex-1">
         <p className="text-[12px] tracking-wide text-[var(--atlas-meta)]">{time}</p>
         <h3 className="mt-0.5 text-[16px] font-medium tracking-tight">
-          <Link href={`/events/${encodeURIComponent(event.id)}`} className="hover:text-[var(--atlas-plum)]">
+          <Link href={eventHref} className="hover:text-[var(--atlas-plum)]">
             {row.title}
           </Link>
         </h3>

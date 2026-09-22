@@ -1,7 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { categoryLabel, eventDurationMinutes, formatAllDayLabel, formatAllDayRange, formatDuration, formatRange } from "@/lib/format";
+import { atlasBack, eventReturnPath } from "@/lib/navigation/back";
 import { descriptionSegments } from "@/lib/present/description";
 import { participantSummary, presentWorkoutDetails } from "@/lib/present/event";
 import {
@@ -11,13 +13,27 @@ import {
   shouldOfferPrepareAction,
 } from "@/lib/prepare/content";
 import { useAppState } from "@/lib/state/provider";
+import { useShellBack } from "../shell/ShellChrome";
 import { CategoryMark } from "./CategoryMark";
 
 export function EventDetails({ eventId }: { eventId: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { state, openSheet, deleteEvent } = useAppState();
   const event = state.events.find((item) => item.id === eventId);
   const timezone = state.profile.timezone;
+  const returnTo = eventReturnPath(searchParams.get("from"), {
+    view: searchParams.get("view"),
+    date: searchParams.get("date"),
+  });
+  const onBack = useCallback(() => {
+    atlasBack(router, returnTo);
+  }, [returnTo, router]);
+
+  useShellBack({
+    fallback: returnTo,
+    onBack,
+  });
 
   if (!event) {
     return <p className="text-[var(--muted)]">This event is no longer on your calendar.</p>;
@@ -31,12 +47,12 @@ export function EventDetails({ eventId }: { eventId: string }) {
   const people = participantSummary(event, state.profile.displayName);
 
   return (
-    <article className="page-column">
+    <article className="page-column event-detail">
       <div className="flex gap-3">
         <CategoryMark event={event} overrides={state.profile.eventColorOverrides} />
-        <div>
+        <div className="min-w-0">
           <h1 className="display-title">{event.title}</h1>
-          <p className="mt-1.5 text-sm text-[var(--muted)]">
+          <p className="event-detail-lead text-sm text-[var(--muted)]">
             {event.allDay
               ? [formatAllDayLabel(event.start, event.end, timezone), formatAllDayRange(event.start, event.end, timezone)]
                   .filter((value, index, list) => list.indexOf(value) === index)
@@ -65,7 +81,7 @@ export function EventDetails({ eventId }: { eventId: string }) {
       </div>
 
       {event.category === "meeting" ? (
-        <div className="mt-5 space-y-3 text-[15px] leading-6">
+        <div className="event-detail-meta event-detail-copy space-y-2 text-[15px] leading-6">
           {event.location ? <p>{event.location}</p> : null}
           {people ? <p>With {people}</p> : null}
           {meeting?.agenda.length ? (
@@ -86,7 +102,7 @@ export function EventDetails({ eventId }: { eventId: string }) {
       ) : null}
 
       {event.category === "training" && details ? (
-        <div className="mt-5 space-y-2 text-[15px] leading-6">
+        <div className="event-detail-meta event-detail-copy space-y-2 text-[15px] leading-6">
           <p>
             {details.duration} · {details.intensity}
           </p>
@@ -108,42 +124,46 @@ export function EventDetails({ eventId }: { eventId: string }) {
       ) : null}
 
       {event.category === "travel" ? (
-        <div className="mt-5 space-y-2 text-[15px] leading-6">
+        <div className="event-detail-meta event-detail-copy space-y-2 text-[15px] leading-6">
           {event.location ? <p>{event.location}</p> : null}
           {event.description ? <EventDescription text={event.description} /> : null}
         </div>
       ) : null}
 
       {event.category === "focus" || event.category === "work" || event.category === "personal" ? (
-        <div className="mt-5 space-y-2 text-[15px] leading-6">
+        <div className="event-detail-meta event-detail-copy space-y-2 text-[15px] leading-6">
           {event.location ? <p>{event.location}</p> : null}
           {event.description ? <EventDescription text={event.description} /> : null}
           {event.category === "work" && people ? <p>With {people}</p> : null}
         </div>
       ) : null}
 
-      <div className="mt-8 flex scroll-mb-[var(--atlas-bottom-inset)] flex-col items-start gap-1">
+      <div className="event-actions" data-atlas-event-actions>
         {showPrepare ? (
-          <button type="button" className="btn-quiet" onClick={() => openSheet({ name: "prepare", eventId: event.id })}>
+          <button
+            type="button"
+            className="event-action is-primary"
+            onClick={() => openSheet({ name: "prepare", eventId: event.id })}
+          >
             {actionLabelForCategory(event.category)}
           </button>
         ) : null}
-        <button type="button" className="btn-quiet" onClick={() => openSheet({ name: "move", eventId: event.id })}>
+        <button type="button" className="event-action is-secondary" onClick={() => openSheet({ name: "move", eventId: event.id })}>
           Move
         </button>
         <button
           type="button"
-          className="btn-quiet"
+          className="event-action is-secondary"
           onClick={() => openSheet({ name: "event", mode: "edit", eventId: event.id })}
         >
           Edit
         </button>
         <button
           type="button"
-          className="btn-danger"
+          className="event-action is-danger"
           onClick={() => {
             void deleteEvent(event.id).then((result) => {
-              if (result.ok) router.push("/calendar");
+              if (result.ok) router.push(returnTo);
             });
           }}
         >
@@ -156,7 +176,7 @@ export function EventDetails({ eventId }: { eventId: string }) {
 
 function EventDescription({ text }: { text: string }) {
   return (
-    <p className="text-[var(--muted)]">
+    <p className="event-detail-copy text-[var(--muted)]">
       {descriptionSegments(text).map((part, index) =>
         part.type === "link" ? (
           <a key={`${part.value}-${index}`} href={part.value} className="underline underline-offset-2" target="_blank" rel="noreferrer">

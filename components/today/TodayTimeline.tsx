@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { eventDetailHref } from "@/lib/navigation/back";
 import { formatClock, formatFreeSpan, formatRange } from "@/lib/format";
 import { eventPlaceLabel } from "@/lib/present/link";
 import { eventFill } from "@/lib/present/eventColor";
@@ -55,7 +56,7 @@ function TimelineEvent({
       <span aria-hidden className="timeline-dot is-event" style={{ background: eventFill(event, colorOverrides) }} />
       <div className="min-w-0">
         <h3 className="text-[17px] font-medium leading-6 tracking-tight">
-          <Link href={`/events/${encodeURIComponent(event.id)}`} className="hover:text-[var(--atlas-plum)]">
+          <Link href={eventDetailHref(event.id, "today")} className="hover:text-[var(--atlas-plum)]">
             {event.title}
           </Link>
         </h3>

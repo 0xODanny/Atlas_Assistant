@@ -26,6 +26,10 @@ test("nav geometry is compact, tokenized, and applies safe-area once", () => {
   assert.match(css, /--atlas-composer-gap/);
   assert.match(css, /\.atlas-composer-dock[\s\S]*bottom:\s*calc\(var\(--atlas-nav-stack\) \+ var\(--atlas-composer-gap\)\)/);
   assert.match(css, /\.atlas-nav-chrome[\s\S]*padding:[\s\S]*var\(--atlas-safe-bottom\)/);
+  assert.match(css, /--atlas-safe-top:\s*calc\(env\(safe-area-inset-top/);
+  assert.match(css, /\.atlas-header[\s\S]*var\(--atlas-safe-top\)/);
+  assert.match(css, /\.atlas-header[\s\S]*position:\s*sticky/);
+  assert.match(css, /display-mode:\s*standalone[\s\S]*--atlas-safe-top:\s*calc\(max\(env\(safe-area-inset-top/);
   assert.doesNotMatch(css, /--atlas-nav-height:\s*5rem/);
   assert.doesNotMatch(
     css,

@@ -31,6 +31,7 @@ export function AppNav({ variant }: { variant: "side" | "bottom" }) {
           <Link
             key={item.href}
             href={item.href}
+            replace
             data-atlas-nav={item.label.toLowerCase()}
             data-atlas-nav-active={active ? "true" : "false"}
             className={["atlas-nav-item", active ? "is-active" : ""].join(" ")}

@@ -71,7 +71,7 @@ test("today timeline renders synchronized events and useful free gaps", () => {
   assert.match(today, /TodayTimeline/);
   assert.match(timeline, /formatFreeSpan/);
   assert.match(schedule, /formatFreeSpan/);
-  assert.match(timeline, /href=\{\`\/events\/\$\{encodeURIComponent\(event\.id\)\}`\}/);
+  assert.match(timeline, /eventDetailHref\(event\.id, "today"\)/);
 });
 
 test("empty today does not duplicate its message", () => {
