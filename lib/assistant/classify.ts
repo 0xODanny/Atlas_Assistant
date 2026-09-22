@@ -170,16 +170,18 @@ export function classifyIntent(text: string, pending?: ModelIntent): ModelIntent
       title: named ?? (sport === "bike" ? "Bike" : sport === "run" ? "Run" : sport === "strength" ? "Strength" : sport === "recovery" ? "Recovery" : /yoga/.test(raw) ? "Yoga" : /pilates/.test(raw) ? "Pilates" : "Swim"),
     };
   }
-  if (/^(please\s+)?(schedule|add|book|create|put)\b/.test(raw) && !/train/.test(raw)) {
+  if (/\b(schedule|add|book|create|put)\b/.test(raw) && !/train/.test(raw)) {
+    const named = titleFromRequest(text);
+    const meetingRequested = /\bmeeting\b/.test(raw);
     return {
       type: "create_event",
-      title: titleFromRequest(text),
+      title: named ?? (meetingRequested ? "Meeting" : undefined),
       when: when ?? (/tomorrow/.test(raw) ? { day: "tomorrow", bound: "tomorrow" } : undefined),
       durationMinutes: spokenDuration,
       durationRequested: Boolean(spokenDuration),
       timingMode: schedule.timingMode,
       location: schedule.location,
-      category: "personal",
+      category: meetingRequested ? "meeting" : "personal",
     };
   }
   if (/some work time|some time to work|a bit of (work )?time|give me some (work )?time/.test(raw) && !spokenDuration) {
