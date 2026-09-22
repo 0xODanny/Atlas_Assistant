@@ -10,6 +10,7 @@ import { Wordmark } from "../ui/Wordmark";
 import { EventSheet } from "../sheets/EventSheet";
 import { MoveSheet } from "../sheets/MoveSheet";
 import { PrepareSheet } from "../sheets/PrepareSheet";
+import { useVisualViewportInsets } from "@/lib/hooks/useVisualViewport";
 import { AppNav } from "./AppNav";
 import { BackControl } from "./BackControl";
 import { ShellChromeProvider, useShellChrome } from "./ShellChrome";
@@ -23,6 +24,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 }
 
 function AppShellFrame({ children }: { children: ReactNode }) {
+  useVisualViewportInsets();
   const { ready, sheet, state } = useAppState();
   const pathname = usePathname();
   const router = useRouter();

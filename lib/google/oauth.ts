@@ -42,6 +42,52 @@ export function buildGoogleAuthUrl(input: {
   return `${GOOGLE_AUTH_URL}?${params.toString()}`;
 }
 
+export function wantsOAuthDocument(request: Request): boolean {
+  const dest = request.headers.get("sec-fetch-dest");
+  const accept = request.headers.get("accept") ?? "";
+  const format = new URL(request.url).searchParams.get("format");
+  if (format === "json") return false;
+  return dest === "document" || dest === "empty" || dest == null || accept.includes("text/html");
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+export function renderOAuthContinuePage(url: string): string {
+  if (!url.startsWith("https://accounts.google.com/")) {
+    throw new Error("invalid_google_oauth_url");
+  }
+  const href = escapeHtmlAttribute(url);
+  const js = JSON.stringify(url)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Connecting Google Calendar</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 2rem 1.25rem; color: #141416; }
+    a { color: #3e1c38; }
+  </style>
+</head>
+<body>
+  <p>Continuing to Google Calendar…</p>
+  <p><a id="continue" href="${href}">Continue</a></p>
+  <script>location.replace(${js});</script>
+</body>
+</html>`;
+}
+
 type TokenResponse = {
   access_token?: string;
   refresh_token?: string;

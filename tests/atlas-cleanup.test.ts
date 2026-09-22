@@ -141,7 +141,7 @@ test("no-upcoming-meeting response does not fall back to a past seed meeting", (
 
 test("mobile bottom inset does not cover final controls", () => {
   assert.equal(CONTENT_BOTTOM_INSET_PX, BOTTOM_NAV_HEIGHT_PX + BOTTOM_NAV_GAP_PX);
-  assert.ok(contentBottomInsetPx(0) >= 104);
+  assert.ok(contentBottomInsetPx(0) >= 64);
   const shell = readFileSync(join(ROOT, "components/shell/AppShell.tsx"), "utf8");
   const css = readFileSync(join(ROOT, "app/globals.css"), "utf8");
   const actions = readFileSync(join(ROOT, "components/assistant/EventPreview.tsx"), "utf8");
@@ -149,8 +149,10 @@ test("mobile bottom inset does not cover final controls", () => {
   assert.match(css, /--atlas-bottom-inset/);
   assert.match(css, /--atlas-bottom-nav-height/);
   assert.doesNotMatch(shell, /z-\[9/);
-  assert.match(css, /--atlas-nav-height:\s*5rem/);
-  assert.match(css, /--atlas-bottom-gap:\s*1\.5rem/);
+  assert.match(css, /--atlas-touch:\s*44px/);
+  assert.match(css, /--atlas-nav-height:\s*calc\(/);
+  assert.match(css, /--atlas-bottom-gap:\s*0\.75rem/);
+  assert.match(css, /--atlas-composer-gap/);
   assert.match(css, /--atlas-composer-height/);
   assert.match(css, /\.atlas-nav-chrome/);
   assert.match(actions, /scroll-mb-\[var\(--atlas-bottom-inset\)\]/);

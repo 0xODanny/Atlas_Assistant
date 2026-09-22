@@ -8,6 +8,7 @@ import {
 } from "@/lib/calendar/destination";
 import { useAppState } from "@/lib/state/provider";
 import { ConnectionRow } from "./ConnectionRow";
+import { GoogleConnectControl } from "./GoogleConnectControl";
 
 export function GoogleCalendarSettings() {
   const searchParams = useSearchParams();
@@ -72,9 +73,7 @@ export function GoogleCalendarSettings() {
 
       <div className="mt-2 flex flex-wrap gap-2">
         {google.status !== "connected" ? (
-          <a className="btn-solid" href="/api/google/oauth">
-            Connect
-          </a>
+          <GoogleConnectControl label="Connect" />
         ) : (
           <>
             <button type="button" className="btn-quiet" onClick={() => void refreshGoogle(true)} disabled={googleSyncing}>
@@ -84,9 +83,7 @@ export function GoogleCalendarSettings() {
               Disconnect
             </button>
             {!googleWriteEnabled ? (
-              <a className="btn-quiet" href="/api/google/oauth?mode=write">
-                Enable writes
-              </a>
+              <GoogleConnectControl mode="write" label="Enable writes" quiet />
             ) : (
               <p className="self-center setting-note text-[var(--muted)]">Writes enabled</p>
             )}
