@@ -60,6 +60,45 @@ export function calendarHref(input: CalendarLocationInput = {}): string {
   return query ? `/calendar?${query}` : "/calendar";
 }
 
+export function readCalendarLocation(
+  hook: CalendarLocationInput,
+  browser?: CalendarLocationInput | null,
+): { view: CalendarViewMode; date: string | null } {
+  const hookDate = parseCalendarDate(hook.date);
+  const hookView = parseCalendarView(hook.view);
+  if (hookDate) return { view: hookView ?? "week", date: hookDate };
+  const browserDate = parseCalendarDate(browser?.date);
+  const browserView = parseCalendarView(browser?.view);
+  if (browserDate) return { view: browserView ?? hookView ?? "week", date: browserDate };
+  return { view: hookView ?? "week", date: null };
+}
+
+export function calendarAutoReplaceHref(currentHref: string): string | null {
+  try {
+    const url = new URL(currentHref, "https://atlas.local");
+    if (url.pathname !== "/calendar") return null;
+    if (parseCalendarDate(url.searchParams.get("date"))) return null;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function isEventPrepareParam(value?: string | null): boolean {
+  return value === "1";
+}
+
+export function eventPrepareHref(
+  eventId: string,
+  from?: string | null,
+  calendar?: CalendarLocationInput,
+): string {
+  const href = eventDetailHref(eventId, from, calendar);
+  const params = new URLSearchParams(href.split("?")[1] ?? "");
+  params.set("prepare", "1");
+  return `${href.split("?")[0]}?${params.toString()}`;
+}
+
 export function eventReturnPath(from?: string | null, calendar?: CalendarLocationInput): string {
   if (from === "today" || from === "/today") return "/today";
   if (from === "calendar" || from === "/calendar") return calendarHref(calendar);

@@ -7,7 +7,7 @@ import {
   calendarHref,
   eventDetailHref,
   formatCalendarDateParam,
-  parseCalendarView,
+  readCalendarLocation,
   type CalendarViewMode,
 } from "@/lib/navigation/back";
 import { formatWeekRange } from "@/lib/calendar/weekOverview";
@@ -34,10 +34,18 @@ export function CalendarView() {
     void refreshGoogle();
   }, [refreshGoogle]);
   const timezone = state.profile.timezone;
-  const view: CalendarViewMode = parseCalendarView(searchParams.get("view")) ?? "week";
-  const dateParam = searchParams.get("date");
+  const browserSearch =
+    typeof window !== "undefined" && window.location.pathname === "/calendar"
+      ? new URLSearchParams(window.location.search)
+      : null;
+  const resolved = readCalendarLocation(
+    { view: searchParams.get("view"), date: searchParams.get("date") },
+    browserSearch ? { view: browserSearch.get("view"), date: browserSearch.get("date") } : null,
+  );
+  const view: CalendarViewMode = resolved.view;
   const cursor =
-    (dateParam ? calendarCursorFromDateParam(dateParam, timezone) : null) ?? startOfZonedDay(timezone, now);
+    (resolved.date ? calendarCursorFromDateParam(resolved.date, timezone) : null) ??
+    startOfZonedDay(timezone, now);
   const events = useVisualEvents(state.events, now, timezone);
   const stripStart = startOfWeek(cursor, timezone);
   const stripDays = Array.from({ length: 7 }, (_, index) => addDays(stripStart, index));
@@ -45,14 +53,6 @@ export function CalendarView() {
     view,
     date: formatCalendarDateParam(cursor, timezone),
   };
-
-  useEffect(() => {
-    const href = calendarHref(location);
-    const current = `${window.location.pathname}${window.location.search}`;
-    if (current !== href) {
-      router.replace(href, { scroll: false });
-    }
-  }, [location.date, location.view, router]);
 
   function openEvent(id: string) {
     router.push(eventDetailHref(id, "calendar", location));

@@ -3,8 +3,15 @@
 import { useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { categoryLabel, eventDurationMinutes, formatAllDayLabel, formatAllDayRange, formatDuration, formatRange } from "@/lib/format";
-import { atlasBack, eventReturnPath } from "@/lib/navigation/back";
+import {
+  atlasBack,
+  eventDetailHref,
+  eventPrepareHref,
+  eventReturnPath,
+  isEventPrepareParam,
+} from "@/lib/navigation/back";
 import { descriptionSegments } from "@/lib/present/description";
+import { PreparePanel } from "../sheets/PrepareSheet";
 import { participantSummary, presentWorkoutDetails } from "@/lib/present/event";
 import {
   actionLabelForCategory,
@@ -22,16 +29,21 @@ export function EventDetails({ eventId }: { eventId: string }) {
   const { state, openSheet, deleteEvent } = useAppState();
   const event = state.events.find((item) => item.id === eventId);
   const timezone = state.profile.timezone;
-  const returnTo = eventReturnPath(searchParams.get("from"), {
+  const from = searchParams.get("from");
+  const calendar = {
     view: searchParams.get("view"),
     date: searchParams.get("date"),
-  });
+  };
+  const preparing = isEventPrepareParam(searchParams.get("prepare"));
+  const eventHref = eventDetailHref(eventId, from, calendar);
+  const returnTo = eventReturnPath(from, calendar);
+  const backTo = preparing ? eventHref : returnTo;
   const onBack = useCallback(() => {
-    atlasBack(router, returnTo);
-  }, [returnTo, router]);
+    atlasBack(router, backTo);
+  }, [backTo, router]);
 
   useShellBack({
-    fallback: returnTo,
+    fallback: backTo,
     onBack,
   });
 
@@ -80,7 +92,13 @@ export function EventDetails({ eventId }: { eventId: string }) {
         </div>
       </div>
 
-      {event.category === "meeting" ? (
+      {preparing ? (
+        <div className="event-detail-meta">
+          <PreparePanel event={event} onScheduled={onBack} />
+        </div>
+      ) : null}
+
+      {!preparing && event.category === "meeting" ? (
         <div className="event-detail-meta event-detail-copy space-y-2 text-[15px] leading-6">
           {event.location ? <p>{event.location}</p> : null}
           {people ? <p>With {people}</p> : null}
@@ -101,7 +119,7 @@ export function EventDetails({ eventId }: { eventId: string }) {
         </div>
       ) : null}
 
-      {event.category === "training" && details ? (
+      {!preparing && event.category === "training" && details ? (
         <div className="event-detail-meta event-detail-copy space-y-2 text-[15px] leading-6">
           <p>
             {details.duration} · {details.intensity}
@@ -123,14 +141,14 @@ export function EventDetails({ eventId }: { eventId: string }) {
         </div>
       ) : null}
 
-      {event.category === "travel" ? (
+      {!preparing && event.category === "travel" ? (
         <div className="event-detail-meta event-detail-copy space-y-2 text-[15px] leading-6">
           {event.location ? <p>{event.location}</p> : null}
           {event.description ? <EventDescription text={event.description} /> : null}
         </div>
       ) : null}
 
-      {event.category === "focus" || event.category === "work" || event.category === "personal" ? (
+      {!preparing && (event.category === "focus" || event.category === "work" || event.category === "personal") ? (
         <div className="event-detail-meta event-detail-copy space-y-2 text-[15px] leading-6">
           {event.location ? <p>{event.location}</p> : null}
           {event.description ? <EventDescription text={event.description} /> : null}
@@ -138,25 +156,26 @@ export function EventDetails({ eventId }: { eventId: string }) {
         </div>
       ) : null}
 
+      {preparing ? null : (
       <div className="event-actions" data-atlas-event-actions>
         {showPrepare ? (
           <button
             type="button"
             className="event-action is-primary"
-            onClick={() => openSheet({ name: "prepare", eventId: event.id })}
+            onClick={() => router.push(eventPrepareHref(event.id, from, calendar))}
           >
-            {actionLabelForCategory(event.category)}
+            <span className="event-action-label">{actionLabelForCategory(event.category)}</span>
           </button>
         ) : null}
         <button type="button" className="event-action is-secondary" onClick={() => openSheet({ name: "move", eventId: event.id })}>
-          Move
+          <span className="event-action-label">Move</span>
         </button>
         <button
           type="button"
           className="event-action is-secondary"
           onClick={() => openSheet({ name: "event", mode: "edit", eventId: event.id })}
         >
-          Edit
+          <span className="event-action-label">Edit</span>
         </button>
         <button
           type="button"
@@ -167,9 +186,10 @@ export function EventDetails({ eventId }: { eventId: string }) {
             });
           }}
         >
-          Delete
+          <span className="event-action-label">Delete</span>
         </button>
       </div>
+      )}
     </article>
   );
 }

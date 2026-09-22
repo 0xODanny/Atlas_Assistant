@@ -1,4 +1,5 @@
 import { eventDurationMinutes, formatDurationMinutes } from "../format";
+import { normalizeEventDescription } from "../present/description";
 import type { CalendarEvent, EventCategory } from "../types/event";
 import type { Meeting } from "../types/meeting";
 import type { Intensity, Sport, Workout } from "../types/training";
@@ -68,8 +69,8 @@ export function linkedMeeting(event: CalendarEvent, meetings: Meeting[]): Meetin
 }
 
 function splitDescription(description: string): string[] {
-  return description
-    .split(/(?<=\.)\s+/)
+  return normalizeEventDescription(description)
+    .split(/\n+|(?<=\.)\s+/)
     .map((item) => item.replace(/\.$/, "").trim())
     .filter(Boolean);
 }

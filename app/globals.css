@@ -417,10 +417,12 @@ body {
 .event-detail-copy,
 .event-detail-copy a {
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
   word-break: break-word;
 }
 
 .event-actions {
+  align-items: stretch;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -430,14 +432,26 @@ body {
 }
 
 .event-action {
-  align-items: center;
-  border-radius: 999px;
-  display: inline-flex;
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  display: grid;
   font-size: 16px;
   font-weight: 500;
-  justify-content: center;
+  height: var(--atlas-touch);
+  line-height: 1;
+  margin: 0;
   min-height: var(--atlas-touch);
-  padding: 0 1rem;
+  padding: 0;
+  place-items: center;
+  text-align: center;
+  width: 100%;
+  border-radius: 999px;
+}
+
+.event-action-label {
+  display: block;
+  text-align: center;
   width: 100%;
 }
 
@@ -457,6 +471,13 @@ body {
   background: transparent;
   border: 1px solid rgba(138, 42, 42, 0.28);
   color: #8a2a2a;
+}
+
+@media (max-width: 767px) {
+  .event-actions {
+    max-width: none;
+    width: 100%;
+  }
 }
 
 .day-chip {

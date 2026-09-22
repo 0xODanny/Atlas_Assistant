@@ -4,15 +4,19 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   atlasBack,
+  calendarAutoReplaceHref,
   calendarCursorFromDateParam,
   calendarHref,
   eventDetailHref,
   eventFromPath,
+  eventPrepareHref,
   eventReturnPath,
   formatCalendarDateParam,
   hasAtlasHistory,
+  isEventPrepareParam,
   parseCalendarDate,
   parseCalendarView,
+  readCalendarLocation,
   routeBackFallback,
 } from "../lib/navigation/back";
 
@@ -68,11 +72,52 @@ test("event detail preserves Today or Calendar context and never returns to Sett
   const calendar = readFileSync(join(ROOT, "components/calendar/CalendarView.tsx"), "utf8");
   assert.match(details, /eventReturnPath/);
   assert.match(details, /useShellBack/);
-  assert.match(details, /atlasBack\(router, returnTo\)/);
+  assert.match(details, /atlasBack\(router, backTo\)/);
+  assert.match(details, /eventPrepareHref/);
+  assert.doesNotMatch(details, /openSheet\(\{ name: "prepare"/);
   assert.doesNotMatch(details, /router\.push\("\/settings"\)/);
   assert.match(nav, /replace/);
   assert.match(calendar, /eventDetailHref\(id, "calendar"/);
-  assert.match(calendar, /router\.replace\(calendarHref/);
+  assert.match(calendar, /function setView[\s\S]*router\.replace\(calendarHref/);
+  assert.match(calendar, /function setCursor[\s\S]*router\.replace\(calendarHref/);
+  assert.match(calendar, /readCalendarLocation/);
+  assert.doesNotMatch(calendar, /useEffect\(\(\) => \{\s*const href = calendarHref/);
+});
+
+test("restored Calendar day or week URLs are never replaced with today", () => {
+  assert.equal(calendarAutoReplaceHref("/calendar?view=day&date=2026-09-22"), null);
+  assert.equal(calendarAutoReplaceHref("/calendar?view=week&date=2026-09-28"), null);
+  assert.equal(calendarAutoReplaceHref("/calendar"), null);
+  assert.deepEqual(readCalendarLocation({ view: "day", date: "2026-09-22" }, { view: "week", date: "2026-09-21" }), {
+    view: "day",
+    date: "2026-09-22",
+  });
+  assert.deepEqual(readCalendarLocation({ view: null, date: null }, { view: "day", date: "2026-09-22" }), {
+    view: "day",
+    date: "2026-09-22",
+  });
+  assert.deepEqual(readCalendarLocation({ view: null, date: null }, { view: "week", date: "2026-09-28" }), {
+    view: "week",
+    date: "2026-09-28",
+  });
+  assert.deepEqual(readCalendarLocation({ view: "agenda", date: "nope" }, null), { view: "week", date: null });
+});
+
+test("Prepare Me is a history step on the event URL", () => {
+  assert.equal(
+    eventPrepareHref("evt_1", "calendar", { view: "day", date: "2026-09-22" }),
+    "/events/evt_1?from=calendar&view=day&date=2026-09-22&prepare=1",
+  );
+  assert.equal(eventPrepareHref("evt_1", "today"), "/events/evt_1?from=today&prepare=1");
+  assert.equal(eventDetailHref("evt_1", "calendar", { view: "day", date: "2026-09-22" }), "/events/evt_1?from=calendar&view=day&date=2026-09-22");
+  assert.equal(eventReturnPath("calendar", { view: "day", date: "2026-09-22" }), "/calendar?view=day&date=2026-09-22");
+  assert.equal(eventReturnPath("today"), "/today");
+  assert.equal(isEventPrepareParam("1"), true);
+  assert.equal(isEventPrepareParam("true"), false);
+  assert.equal(isEventPrepareParam("https://evil.example"), false);
+  const details = readFileSync(join(ROOT, "components/events/EventDetails.tsx"), "utf8");
+  assert.match(details, /preparing \? eventHref : returnTo/);
+  assert.match(details, /router\.push\(eventPrepareHref/);
 });
 
 test("calendar return state only accepts validated view and date values", () => {
@@ -103,8 +148,15 @@ test("event detail actions are stacked button controls", () => {
   assert.match(details, /event-action is-primary/);
   assert.match(details, /event-action is-secondary/);
   assert.match(details, /event-action is-danger/);
+  assert.match(details, /event-action-label/);
   assert.doesNotMatch(details, /btn-quiet/);
   assert.match(css, /\.event-actions[\s\S]*flex-direction:\s*column/);
+  assert.match(css, /\.event-action[\s\S]*display:\s*grid/);
+  assert.match(css, /\.event-action[\s\S]*place-items:\s*center/);
+  assert.match(css, /\.event-action[\s\S]*text-align:\s*center/);
+  assert.match(css, /\.event-action[\s\S]*appearance:\s*none/);
+  assert.match(css, /\.event-action[\s\S]*padding:\s*0/);
+  assert.match(css, /\.event-action-label[\s\S]*text-align:\s*center/);
   assert.match(css, /\.event-action[\s\S]*min-height:\s*var\(--atlas-touch\)/);
   assert.match(css, /\.event-detail-copy[\s\S]*overflow-wrap:\s*anywhere/);
 });

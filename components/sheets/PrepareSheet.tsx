@@ -4,22 +4,25 @@ import { formatClock, formatDuration } from "@/lib/format";
 import { buildPreparation, linkedMeeting, linkedWorkout } from "@/lib/prepare/content";
 import { useAppState } from "@/lib/state/provider";
 import { addMinutes } from "@/lib/time";
+import type { CalendarEvent } from "@/lib/types/event";
 import { Sheet } from "./Sheet";
 
-export function PrepareSheet() {
-  const { state, sheet, closeSheet, createEvent } = useAppState();
-  const event = sheet?.name === "prepare" ? state.events.find((item) => item.id === sheet.eventId) : undefined;
+export function PreparePanel({
+  event,
+  onScheduled,
+}: {
+  event: CalendarEvent;
+  onScheduled?: () => void;
+}) {
+  const { state, createEvent } = useAppState();
   const timezone = state.profile.timezone;
-
-  if (!event || sheet?.name !== "prepare") return null;
-
   const workout = linkedWorkout(event, state.workouts);
   const meeting = linkedMeeting(event, state.meetings);
   const prep = buildPreparation({ event, workout, meeting });
   const prepStart = addMinutes(new Date(event.start), -Math.max(prep.prepMinutes, 0));
 
   return (
-    <Sheet title={prep.sheetTitle} onClose={closeSheet}>
+    <div data-atlas-prepare>
       <p className="text-sm text-[var(--muted)]">
         {prep.eyebrow} · {formatClock(event.start, timezone)}
       </p>
@@ -51,12 +54,29 @@ export function PrepareSheet() {
               category: "focus",
               privacy: "private",
             });
-            closeSheet();
+            onScheduled?.();
           }}
         >
           Schedule {formatDuration(prep.prepMinutes)} preparation
         </button>
       ) : null}
+    </div>
+  );
+}
+
+export function PrepareSheet() {
+  const { state, sheet, closeSheet } = useAppState();
+  const event = sheet?.name === "prepare" ? state.events.find((item) => item.id === sheet.eventId) : undefined;
+
+  if (!event || sheet?.name !== "prepare") return null;
+
+  const workout = linkedWorkout(event, state.workouts);
+  const meeting = linkedMeeting(event, state.meetings);
+  const prep = buildPreparation({ event, workout, meeting });
+
+  return (
+    <Sheet title={prep.sheetTitle} onClose={closeSheet}>
+      <PreparePanel event={event} onScheduled={closeSheet} />
     </Sheet>
   );
 }
