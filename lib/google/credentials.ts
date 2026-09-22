@@ -1,6 +1,6 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { CREDENTIAL_STORE_PATH } from "./config";
+import { CREDENTIAL_STORE_PATH, resolveCredentialStoreKind } from "./config";
 
 export type CalendarCredential = {
   provider: "google";
@@ -72,7 +72,11 @@ export function createFileCredentialStore(
 let defaultStore: CalendarCredentialStore | undefined;
 
 export function defaultCredentialStore(): CalendarCredentialStore {
-  defaultStore ??= createFileCredentialStore();
+  if (defaultStore) return defaultStore;
+  if (resolveCredentialStoreKind() === "cookie") {
+    throw new Error("cookie_credential_store_requires_request");
+  }
+  defaultStore = createFileCredentialStore();
   return defaultStore;
 }
 

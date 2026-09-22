@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { defaultCredentialStore } from "@/lib/google/credentials";
+import { bindGoogleCredentialStore } from "@/lib/google/credentialStore";
 
-export async function POST() {
-  await defaultCredentialStore().clear();
-  return NextResponse.json({ ok: true, connection: { status: "disconnected" } });
+export async function POST(request: Request) {
+  const { store, applyTo } = bindGoogleCredentialStore(request);
+  await store.clear();
+  return applyTo(NextResponse.json({ ok: true, connection: { status: "disconnected" } }));
 }

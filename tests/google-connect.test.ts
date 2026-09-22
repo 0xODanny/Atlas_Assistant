@@ -68,5 +68,8 @@ test("OAuth route sets CSRF cookie and does not expose secrets", () => {
   assert.match(callback, /state !== expected/);
   assert.match(callback, /google=connected/);
   assert.match(callback, /google=error/);
+  assert.match(callback, /logGoogleOAuthFailure/);
+  assert.match(callback, /bindGoogleCredentialStore/);
   assert.doesNotMatch(route, /GOOGLE_CLIENT_SECRET/);
+  assert.doesNotMatch(callback, /GOOGLE_CLIENT_SECRET/);
 });

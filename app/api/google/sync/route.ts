@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { defaultCredentialStore } from "@/lib/google/credentials";
+import { bindGoogleCredentialStore } from "@/lib/google/credentialStore";
 import { syncGoogleCalendar } from "@/lib/google/sync";
 
 export async function POST(request: Request) {
@@ -8,11 +8,12 @@ export async function POST(request: Request) {
     includedCalendarIds?: string[];
     privacyDefault?: "private" | "busy-only" | "shared";
   };
+  const { store, applyTo } = bindGoogleCredentialStore(request);
   const result = await syncGoogleCalendar({
-    store: defaultCredentialStore(),
+    store,
     timezone: body.timezone || "UTC",
     includedCalendarIds: body.includedCalendarIds,
     privacyDefault: body.privacyDefault,
   });
-  return NextResponse.json(result);
+  return applyTo(NextResponse.json(result));
 }

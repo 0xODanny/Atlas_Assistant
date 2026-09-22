@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { defaultCredentialStore } from "@/lib/google/credentials";
+import { bindGoogleCredentialStore } from "@/lib/google/credentialStore";
 import { applyIncludedCalendars, syncGoogleCalendar } from "@/lib/google/sync";
 
 export async function PATCH(request: Request) {
@@ -12,8 +12,9 @@ export async function PATCH(request: Request) {
   const included =
     body.includedCalendarIds ??
     (body.calendars ?? []).filter((calendar) => calendar.included).map((calendar) => calendar.id);
+  const { store, applyTo } = bindGoogleCredentialStore(request);
   const result = await syncGoogleCalendar({
-    store: defaultCredentialStore(),
+    store,
     timezone: body.timezone || "UTC",
     includedCalendarIds: included,
     privacyDefault: body.privacyDefault,
@@ -21,5 +22,5 @@ export async function PATCH(request: Request) {
   if (result.connection.calendars) {
     result.connection.calendars = applyIncludedCalendars(result.connection.calendars, included);
   }
-  return NextResponse.json(result);
+  return applyTo(NextResponse.json(result));
 }
