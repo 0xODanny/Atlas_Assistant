@@ -27,11 +27,12 @@ type WeekViewProps = {
   workouts?: Workout[];
   meetings?: Meeting[];
   profile: UserProfile;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, day: Date) => void;
+  onSelectDay: (day: Date) => void;
   onAdd?: () => void;
 };
 
-export function WeekView({ date, events, profile, onSelect, onAdd }: WeekViewProps) {
+export function WeekView({ date, events, profile, onSelect, onSelectDay, onAdd }: WeekViewProps) {
   const now = useNow();
   const { sheet } = useAppState();
   const days = weekDays(date, profile.timezone);
@@ -51,7 +52,17 @@ export function WeekView({ date, events, profile, onSelect, onAdd }: WeekViewPro
   }, [date]);
 
   function toggleDay(day: Date) {
+    onSelectDay(day);
     setOpenDay((current) => (current && sameZonedDay(current, day, profile.timezone) ? null : day));
+  }
+
+  function openDayDetails(day: Date) {
+    onSelectDay(day);
+    setOpenDay(day);
+  }
+
+  function openEventOnDay(id: string, day: Date) {
+    onSelect(id, day);
   }
 
   return (
@@ -114,7 +125,7 @@ export function WeekView({ date, events, profile, onSelect, onAdd }: WeekViewPro
                         data-atlas-event-source={event.source}
                         className="week-event"
                         style={{ background: eventFill(event, profile.eventColorOverrides) }}
-                        onClick={() => onSelect(event.id)}
+                        onClick={() => openEventOnDay(event.id, day)}
                       >
                         <span className="week-event-time">
                           {event.allDay ? "All day" : formatClock(event.start, profile.timezone)}
@@ -128,7 +139,7 @@ export function WeekView({ date, events, profile, onSelect, onAdd }: WeekViewPro
                       type="button"
                       className="week-more"
                       data-atlas-week-more
-                      onClick={() => setOpenDay(day)}
+                      onClick={() => openDayDetails(day)}
                     >
                       {compactMoreLabel(overflow)}
                     </button>
@@ -146,7 +157,7 @@ export function WeekView({ date, events, profile, onSelect, onAdd }: WeekViewPro
           timezone={profile.timezone}
           covered={Boolean(sheet)}
           onClose={() => setOpenDay(null)}
-          onSelect={onSelect}
+          onSelect={(id) => (openDay ? openEventOnDay(id, openDay) : undefined)}
           onAdd={onAdd}
           returnFocus={infoRefs.current[openKey ?? ""] ?? null}
           colorOverrides={profile.eventColorOverrides}

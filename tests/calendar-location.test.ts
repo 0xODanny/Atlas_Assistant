@@ -9,6 +9,7 @@ import {
   calendarHref,
   calendarSessionLocation,
   calendarTabHref,
+  eventDetailHref,
   eventReturnPath,
   rememberCalendarLocation,
   resolveCalendarLocation,
@@ -203,13 +204,69 @@ test("CalendarView no longer treats missing URL date as today when memory exists
   const details = readFileSync(join(ROOT, "components/events/EventDetails.tsx"), "utf8");
   const nav = readFileSync(join(ROOT, "lib/navigation/back.ts"), "utf8");
   assert.match(calendar, /resolveCalendarLocation/);
-  assert.match(calendar, /rememberCalendarLocation\(location\)/);
-  assert.match(calendar, /stampCalendarHistory\(location\)/);
+  assert.match(calendar, /rememberCalendarLocation\(nextLocation\)/);
+  assert.match(calendar, /stampCalendarHistory\(nextLocation\)/);
   assert.match(details, /rememberCalendarLocation\(\{ view: calendarView, date: calendarDate \}\)/);
   assert.match(nav, /localStorage/);
   assert.match(nav, /sessionStorage/);
   assert.match(nav, /source: "today"/);
   assert.doesNotMatch(nav, /__PRIVATE_NEXTJS_INTERNALS_TREE/);
+});
+
+test("A. same-week future event uses that day, not the stale Wednesday cursor", () => {
+  const week = readFileSync(join(ROOT, "components/calendar/WeekView.tsx"), "utf8");
+  const calendar = readFileSync(join(ROOT, "components/calendar/CalendarView.tsx"), "utf8");
+  assert.match(week, /onSelect: \(id: string, day: Date\) => void/);
+  assert.match(week, /openEventOnDay\(event\.id, day\)/);
+  assert.match(calendar, /function openEvent\(id: string, day\?: Date\)/);
+  assert.match(calendar, /formatCalendarDateParam\(day, timezone\)/);
+  assert.equal(
+    eventDetailHref("evt_sat", "calendar", { view: "week", date: "2026-09-26" }),
+    "/events/evt_sat?from=calendar&view=week&date=2026-09-26",
+  );
+  rememberCalendarLocation({ view: "week", date: "2026-09-23" });
+  rememberCalendarLocation({ view: "week", date: "2026-09-26" });
+  const resolved = resolveCalendarLocation({ hook: {}, browser: {}, today: "2026-09-23" });
+  assert.deepEqual(resolved, { view: "week", date: "2026-09-26", source: "session" });
+  assert.equal(calendarCanonicalHref("/calendar", resolved), "/calendar?view=week&date=2026-09-26");
+  assert.notEqual(resolved.date, "2026-09-23");
+});
+
+test("B. next-week event returns to Sep 29, not the week-start or today", () => {
+  rememberCalendarLocation({ view: "week", date: "2026-09-30" });
+  rememberCalendarLocation({ view: "week", date: "2026-09-29" });
+  assert.equal(
+    eventDetailHref("evt_29", "calendar", { view: "week", date: "2026-09-29" }),
+    "/events/evt_29?from=calendar&view=week&date=2026-09-29",
+  );
+  const resolved = resolveCalendarLocation({ hook: {}, browser: {}, today: "2026-09-23" });
+  assert.deepEqual(resolved, { view: "week", date: "2026-09-29", source: "session" });
+  assert.equal(calendarCanonicalHref("/calendar", resolved), "/calendar?view=week&date=2026-09-29");
+});
+
+test("C. Week overlay/day selection persists that day as the week cursor", () => {
+  const week = readFileSync(join(ROOT, "components/calendar/WeekView.tsx"), "utf8");
+  const calendar = readFileSync(join(ROOT, "components/calendar/CalendarView.tsx"), "utf8");
+  assert.match(week, /onSelectDay: \(day: Date\) => void/);
+  assert.match(week, /function toggleDay[\s\S]*onSelectDay\(day\)/);
+  assert.match(week, /function openDayDetails[\s\S]*onSelectDay\(day\)/);
+  assert.match(calendar, /onSelectDay=\{\(next\) => setCursor\(next, "week"\)\}/);
+  rememberCalendarLocation({ view: "week", date: "2026-09-23" });
+  rememberCalendarLocation({ view: "week", date: "2026-09-26" });
+  assert.deepEqual(calendarSessionLocation(), { view: "week", date: "2026-09-26" });
+  assert.deepEqual(calendarDurableLocation(), { view: "week", date: "2026-09-26" });
+});
+
+test("D. Week arrows still step the existing cursor by seven days", () => {
+  const calendar = readFileSync(join(ROOT, "components/calendar/CalendarView.tsx"), "utf8");
+  assert.match(calendar, /function stepCursor[\s\S]*setCursor\(addDays\(selected, direction \* 7\)\)/);
+  assert.doesNotMatch(calendar, /scrollend|onScroll/);
+});
+
+test("E/F. Day and Month event opening stay on their existing handlers", () => {
+  const calendar = readFileSync(join(ROOT, "components/calendar/CalendarView.tsx"), "utf8");
+  assert.match(calendar, /view === "day" \? \([\s\S]*onSelect=\{openEvent\}/);
+  assert.match(calendar, /onSelectDay=\{\(next\) => setCursor\(next, "day"\)\}/);
 });
 
 test("dated Calendar URLs are not replaced by memory", () => {

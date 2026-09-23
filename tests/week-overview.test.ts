@@ -147,6 +147,17 @@ test("expanded view contains all events for that day and scrolls internally", ()
   assert.match(schedule, /data-atlas-event-source/);
 });
 
+test("week day and event interactions pass that day into Calendar location", () => {
+  const week = readFileSync(join(ROOT, "components/calendar/WeekView.tsx"), "utf8");
+  assert.match(week, /onSelect: \(id: string, day: Date\) => void/);
+  assert.match(week, /onSelectDay: \(day: Date\) => void/);
+  assert.match(week, /openEventOnDay\(event\.id, day\)/);
+  assert.match(week, /openDay \? openEventOnDay\(id, openDay\)/);
+  assert.match(week, /onSelectDay\(day\)/);
+  assert.doesNotMatch(week, /onClick=\{\(\) => onSelect\(event\.id\)\}/);
+  assert.doesNotMatch(week, /addEventListener\("scroll/);
+});
+
 test("event identity and source are preserved and the overlay does not mutate", () => {
   const week = readFileSync(join(ROOT, "components/calendar/WeekView.tsx"), "utf8");
   const overlay = readFileSync(join(ROOT, "components/calendar/DayOverlay.tsx"), "utf8");

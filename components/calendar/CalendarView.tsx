@@ -89,10 +89,13 @@ export function CalendarView() {
   const stripDays = Array.from({ length: 7 }, (_, index) => addDays(stripStart, index));
   const location = { view, date: selectedDate };
 
-  function openEvent(id: string) {
-    rememberCalendarLocation(location);
-    stampCalendarHistory(location);
-    router.push(eventDetailHref(id, "calendar", location));
+  function openEvent(id: string, day?: Date) {
+    const nextLocation = day
+      ? { view, date: formatCalendarDateParam(day, timezone) }
+      : location;
+    rememberCalendarLocation(nextLocation);
+    stampCalendarHistory(nextLocation);
+    router.push(eventDetailHref(id, "calendar", nextLocation));
   }
 
   function setView(next: CalendarViewMode) {
@@ -206,6 +209,7 @@ export function CalendarView() {
             meetings={state.meetings}
             profile={state.profile}
             onSelect={openEvent}
+            onSelectDay={(next) => setCursor(next, "week")}
             onAdd={() => openSheet({ name: "event", mode: "create" })}
           />
         ) : null}
