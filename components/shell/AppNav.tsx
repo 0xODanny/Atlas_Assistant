@@ -2,23 +2,29 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
+import { calendarTabHref, subscribeCalendarLocation } from "@/lib/navigation/back";
 import { AssistantIcon, CalendarIcon, TodayIcon, YouIcon } from "./NavIcons";
 
-const ITEMS: Array<{ href: string; label: string; icon: ReactNode }> = [
-  { href: "/today", label: "Today", icon: <TodayIcon /> },
-  { href: "/calendar", label: "Calendar", icon: <CalendarIcon /> },
-  { href: "/assistant", label: "Assistant", icon: <AssistantIcon /> },
-  { href: "/settings", label: "You", icon: <YouIcon /> },
+const ITEMS: Array<{ path: string; label: string; icon: ReactNode }> = [
+  { path: "/today", label: "Today", icon: <TodayIcon /> },
+  { path: "/calendar", label: "Calendar", icon: <CalendarIcon /> },
+  { path: "/assistant", label: "Assistant", icon: <AssistantIcon /> },
+  { path: "/settings", label: "You", icon: <YouIcon /> },
 ];
 
-function isActive(pathname: string, href: string): boolean {
-  if (href === "/settings") return pathname === href || pathname.startsWith("/settings/");
-  return pathname === href || pathname.startsWith(`${href}/`);
+function isActive(pathname: string, path: string): boolean {
+  if (path === "/settings") return pathname === path || pathname.startsWith("/settings/");
+  return pathname === path || pathname.startsWith(`${path}/`);
+}
+
+function itemHref(path: string, calendarHref: string): string {
+  return path === "/calendar" ? calendarHref : path;
 }
 
 export function AppNav({ variant }: { variant: "side" | "bottom" }) {
   const pathname = usePathname();
+  const calendarHref = useSyncExternalStore(subscribeCalendarLocation, calendarTabHref, () => "/calendar");
 
   return (
     <nav
@@ -26,11 +32,12 @@ export function AppNav({ variant }: { variant: "side" | "bottom" }) {
       aria-label={variant === "side" ? "Primary" : "Main"}
     >
       {ITEMS.map((item) => {
-        const active = isActive(pathname, item.href);
+        const href = itemHref(item.path, calendarHref);
+        const active = isActive(pathname, item.path);
         return (
           <Link
-            key={item.href}
-            href={item.href}
+            key={item.path}
+            href={href}
             replace
             data-atlas-nav={item.label.toLowerCase()}
             data-atlas-nav-active={active ? "true" : "false"}

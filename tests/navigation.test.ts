@@ -23,7 +23,17 @@ import {
 
 const ROOT = join(process.cwd());
 
+function clearCalendarMemory(): void {
+  try {
+    sessionStorage?.removeItem("atlas.calendar.location");
+    localStorage?.removeItem("atlas.calendar.location");
+  } catch {
+    // Node tests may have no Web Storage.
+  }
+}
+
 test("child routes fall back to their parent roots", () => {
+  clearCalendarMemory();
   assert.equal(routeBackFallback("/today"), null);
   assert.equal(routeBackFallback("/calendar"), null);
   assert.equal(routeBackFallback("/assistant"), null);
@@ -56,6 +66,7 @@ test("event detail preserves Today or Calendar context and never returns to Sett
   assert.equal(eventDetailHref("evt_1"), "/events/evt_1");
   assert.equal(eventReturnPath("today"), "/today");
   assert.equal(eventReturnPath("today", { view: "week", date: "2026-09-28" }), "/today");
+  clearCalendarMemory();
   assert.equal(eventReturnPath("calendar"), "/calendar");
   assert.equal(
     eventReturnPath("calendar", { view: "day", date: "2026-09-22" }),
@@ -81,10 +92,12 @@ test("event detail preserves Today or Calendar context and never returns to Sett
   assert.match(calendar, /eventDetailHref\(id, "calendar"/);
   assert.match(calendar, /function setView[\s\S]*router\.replace\(calendarHref/);
   assert.match(calendar, /function setCursor[\s\S]*router\.replace\(calendarHref/);
-  assert.match(calendar, /readCalendarLocation/);
-  assert.match(calendar, /calendarRestoreHref/);
+  assert.match(calendar, /resolveCalendarLocation/);
+  assert.match(calendar, /calendarCanonicalHref/);
   assert.match(calendar, /stampCalendarHistory/);
   assert.match(calendar, /rememberCalendarLocation/);
+  assert.doesNotMatch(calendar, /resolved\.date \? calendarCursorFromDateParam[\s\S]*\?\?/);
+  assert.doesNotMatch(calendar, /startOfZonedDay\(timezone, now\)/);
   assert.doesNotMatch(calendar, /useEffect\(\(\) => \{\s*const href = calendarHref/);
 });
 
@@ -152,7 +165,7 @@ test("calendar return state only accepts validated view and date values", () => 
   assert.equal(parseCalendarDate("../../etc/passwd"), null);
   assert.equal(calendarHref({ view: "list", date: "nope" }), "/calendar");
   assert.equal(calendarHref({ view: "week", date: "2026-13-01" }), "/calendar?view=week");
-  assert.equal(eventReturnPath("calendar", { view: "agenda", date: "2026-09-22" }), "/calendar?date=2026-09-22");
+  assert.equal(eventReturnPath("calendar", { view: "agenda", date: "2026-09-22" }), "/calendar?view=week&date=2026-09-22");
   assert.equal(eventDetailHref("evt_1", "https://evil.example/calendar"), "/events/evt_1");
   assert.equal(eventDetailHref("evt_1", "today", { view: "week", date: "2026-09-28" }), "/events/evt_1?from=today");
   const cursor = calendarCursorFromDateParam("2026-09-22", "America/New_York");

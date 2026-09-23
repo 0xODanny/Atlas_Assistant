@@ -1,16 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  calendarCanonicalHref,
   calendarCursorFromDateParam,
   calendarHref,
-  calendarLocationMemory,
-  calendarRestoreHref,
   eventDetailHref,
   formatCalendarDateParam,
-  readCalendarLocation,
   rememberCalendarLocation,
+  resolveCalendarLocation,
   stampCalendarHistory,
   type CalendarViewMode,
 } from "@/lib/navigation/back";
@@ -30,45 +29,65 @@ function startOfWeek(date: Date, timezone: string): Date {
   return addDays(start, -zonedParts(timezone, start).weekday);
 }
 
+function clientSnapshot(): boolean {
+  return true;
+}
+
+function serverSnapshot(): boolean {
+  return false;
+}
+
+function subscribeNever(): () => void {
+  return () => undefined;
+}
+
 export function CalendarView() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { state, openSheet, refreshGoogle } = useAppState();
   const now = useNow();
+  const client = useSyncExternalStore(subscribeNever, clientSnapshot, serverSnapshot);
+  const timezone = state.profile.timezone;
+  const todayDate = formatCalendarDateParam(now, timezone);
+  const hook = { view: searchParams.get("view"), date: searchParams.get("date") };
+  const browser =
+    client && window.location.pathname === "/calendar"
+      ? { view: new URLSearchParams(window.location.search).get("view"), date: new URLSearchParams(window.location.search).get("date") }
+      : null;
+  const resolved = resolveCalendarLocation({
+    hook,
+    browser,
+    today: client ? todayDate : null,
+  });
+  const view: CalendarViewMode = resolved.view;
+  const cursor = resolved.date ? calendarCursorFromDateParam(resolved.date, timezone) : null;
+  const events = useVisualEvents(state.events, now, timezone);
+
   useEffect(() => {
     void refreshGoogle();
   }, [refreshGoogle]);
-  const timezone = state.profile.timezone;
-  const browserSearch =
-    typeof window !== "undefined" && window.location.pathname === "/calendar"
-      ? new URLSearchParams(window.location.search)
-      : null;
-  const memory = typeof window !== "undefined" ? calendarLocationMemory() : null;
-  const resolved = readCalendarLocation(
-    { view: searchParams.get("view"), date: searchParams.get("date") },
-    browserSearch ? { view: browserSearch.get("view"), date: browserSearch.get("date") } : null,
-    memory,
-  );
-  const view: CalendarViewMode = resolved.view;
-  const cursor =
-    (resolved.date ? calendarCursorFromDateParam(resolved.date, timezone) : null) ??
-    startOfZonedDay(timezone, now);
-  const events = useVisualEvents(state.events, now, timezone);
-  const stripStart = startOfWeek(cursor, timezone);
-  const stripDays = Array.from({ length: 7 }, (_, index) => addDays(stripStart, index));
-  const location = {
-    view,
-    date: formatCalendarDateParam(cursor, timezone),
-  };
 
-  useEffect(() => {
-    if (resolved.date) rememberCalendarLocation({ view, date: resolved.date });
+  useLayoutEffect(() => {
+    if (!resolved.date) return;
+    const location = { view, date: resolved.date };
+    rememberCalendarLocation(location);
+    if (window.location.pathname !== "/calendar") return;
     const current = `${window.location.pathname}${window.location.search}`;
-    const restore = calendarRestoreHref(current, calendarLocationMemory());
-    if (restore && restore !== current) {
-      router.replace(restore, { scroll: false });
+    const canonical = calendarCanonicalHref(current, location);
+    if (canonical) {
+      router.replace(canonical, { scroll: false });
     }
   }, [resolved.date, view, router]);
+
+  if (!cursor || !resolved.date) {
+    return <p className="text-[var(--atlas-muted)]">Loading calendar…</p>;
+  }
+
+  const selected = cursor;
+  const selectedDate = resolved.date;
+  const stripStart = startOfWeek(selected, timezone);
+  const stripDays = Array.from({ length: 7 }, (_, index) => addDays(stripStart, index));
+  const location = { view, date: selectedDate };
 
   function openEvent(id: string) {
     rememberCalendarLocation(location);
@@ -77,23 +96,24 @@ export function CalendarView() {
   }
 
   function setView(next: CalendarViewMode) {
-    const href = calendarHref({ view: next, date: location.date });
-    rememberCalendarLocation({ view: next, date: location.date });
-    router.replace(href, { scroll: false });
+    const nextLocation = { view: next, date: location.date };
+    rememberCalendarLocation(nextLocation);
+    router.replace(calendarHref(nextLocation), { scroll: false });
   }
 
   function setCursor(next: Date, nextView: CalendarViewMode = view) {
     const date = formatCalendarDateParam(next, timezone);
-    rememberCalendarLocation({ view: nextView, date });
-    router.replace(calendarHref({ view: nextView, date }), { scroll: false });
+    const nextLocation = { view: nextView, date };
+    rememberCalendarLocation(nextLocation);
+    router.replace(calendarHref(nextLocation), { scroll: false });
   }
 
   function stepCursor(direction: -1 | 1) {
     if (view === "month") {
-      setCursor(addMonths(cursor, direction, timezone));
+      setCursor(addMonths(selected, direction, timezone));
       return;
     }
-    setCursor(addDays(cursor, direction * 7));
+    setCursor(addDays(selected, direction * 7));
   }
 
   return (
@@ -101,9 +121,9 @@ export function CalendarView() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="display-title-cal whitespace-nowrap" data-atlas-month>
-            {formatMonth(cursor.toISOString(), timezone)}
+            {formatMonth(selected.toISOString(), timezone)}
           </h1>
-          <p className="year-label">{formatYear(cursor.toISOString(), timezone)}</p>
+          <p className="year-label">{formatYear(selected.toISOString(), timezone)}</p>
         </div>
         <div className="flex items-center gap-1 pt-1" role="group" aria-label="View">
           <button type="button" className="day-chip" aria-pressed={view === "day"} onClick={() => setView("day")}>
@@ -115,7 +135,7 @@ export function CalendarView() {
           <button type="button" className="day-chip" aria-pressed={view === "month"} onClick={() => setView("month")}>
             Month
           </button>
-          {sameZonedDay(cursor, now, timezone) ? null : (
+          {sameZonedDay(selected, now, timezone) ? null : (
             <button type="button" className="day-chip" onClick={() => setCursor(now)}>
               Today
             </button>
@@ -144,7 +164,7 @@ export function CalendarView() {
           <div className="min-w-0 flex-1">
             <DateStrip
               days={stripDays}
-              selected={cursor}
+              selected={selected}
               timezone={timezone}
               now={now}
               onSelect={setCursor}
@@ -152,7 +172,7 @@ export function CalendarView() {
           </div>
         ) : (
           <p className="week-range" data-atlas-week-range>
-            {view === "month" ? formatMonth(cursor.toISOString(), timezone) : formatWeekRange(cursor, timezone)}
+            {view === "month" ? formatMonth(selected.toISOString(), timezone) : formatWeekRange(selected, timezone)}
           </p>
         )}
         <button
@@ -168,7 +188,7 @@ export function CalendarView() {
       <div className="mt-4">
         {view === "day" ? (
           <DayView
-            date={cursor}
+            date={selected}
             events={events}
             workouts={state.workouts}
             meetings={state.meetings}
@@ -180,7 +200,7 @@ export function CalendarView() {
         ) : null}
         {view === "week" ? (
           <WeekView
-            date={cursor}
+            date={selected}
             events={events}
             workouts={state.workouts}
             meetings={state.meetings}
@@ -191,7 +211,7 @@ export function CalendarView() {
         ) : null}
         {view === "month" ? (
           <MonthView
-            date={cursor}
+            date={selected}
             events={events}
             profile={state.profile}
             now={now}

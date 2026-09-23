@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { categoryLabel, eventDurationMinutes, formatAllDayLabel, formatAllDayRange, formatDuration, formatRange } from "@/lib/format";
 import {
@@ -9,6 +9,7 @@ import {
   eventPrepareHref,
   eventReturnPath,
   isEventPrepareParam,
+  rememberCalendarLocation,
 } from "@/lib/navigation/back";
 import { descriptionSegments } from "@/lib/present/description";
 import { ConfirmDeleteSheet } from "../sheets/ConfirmDeleteSheet";
@@ -32,14 +33,19 @@ export function EventDetails({ eventId }: { eventId: string }) {
   const event = state.events.find((item) => item.id === eventId);
   const timezone = state.profile.timezone;
   const from = searchParams.get("from");
+  const calendarView = searchParams.get("view");
+  const calendarDate = searchParams.get("date");
   const calendar = {
-    view: searchParams.get("view"),
-    date: searchParams.get("date"),
+    view: calendarView,
+    date: calendarDate,
   };
   const preparing = isEventPrepareParam(searchParams.get("prepare"));
   const eventHref = eventDetailHref(eventId, from, calendar);
   const returnTo = eventReturnPath(from, calendar);
   const backTo = preparing ? eventHref : returnTo;
+  useEffect(() => {
+    if (from === "calendar") rememberCalendarLocation({ view: calendarView, date: calendarDate });
+  }, [from, calendarView, calendarDate]);
   const onBack = useCallback(() => {
     atlasBack(router, backTo);
   }, [backTo, router]);
