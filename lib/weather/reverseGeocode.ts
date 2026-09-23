@@ -4,7 +4,7 @@ import type { FetchLike } from "./openMeteo";
 
 export const NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse";
 export const NOMINATIM_USER_AGENT = "AtlasAssistant/1.0 (https://github.com/0xODanny/Atlas_Assistant; weather city labels)";
-export const NOMINATIM_ZOOM = 10;
+export const NOMINATIM_ZOOM = 14;
 
 export type NominatimAddress = {
   city?: string;
@@ -13,6 +13,8 @@ export type NominatimAddress = {
   municipality?: string;
   borough?: string;
   locality?: string;
+  hamlet?: string;
+  county?: string;
   state?: string;
   region?: string;
   road?: string;
@@ -29,7 +31,7 @@ export type ReverseGeocodeResult =
   | { ok: true; locationLabel: string }
   | { ok: false; locationLabel: typeof FALLBACK_LOCATION_LABEL };
 
-const LOCALITY_FIELDS = ["city", "town", "village", "municipality", "borough", "locality"] as const;
+const LOCALITY_FIELDS = ["city", "town", "village", "municipality", "borough", "locality", "hamlet"] as const;
 const REGION_FIELDS = ["state", "region"] as const;
 
 function cleanPlacePart(value: unknown): string | undefined {
@@ -58,9 +60,9 @@ export function regionFromAddress(address: NominatimAddress | undefined): string
 
 export function formatCityRegionLabel(locality?: string, region?: string): string | undefined {
   const city = cleanPlacePart(locality);
+  if (!city) return undefined;
   const admin = cleanPlacePart(region);
-  if (city && admin) return `${city}, ${admin}`;
-  return city ?? admin;
+  return admin ? `${city}, ${admin}` : city;
 }
 
 export function labelFromNominatim(payload: NominatimReversePayload | null | undefined): string {

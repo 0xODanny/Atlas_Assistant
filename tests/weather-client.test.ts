@@ -112,6 +112,7 @@ test("geolocation success saves coordinates and weather", async () => {
   assert.equal(session.prefs.location.lat, 37.7749);
   assert.equal(session.prefs.location.label, "San Francisco, California");
   assert.equal(session.prefs.location.labelState, "resolved");
+  assert.equal(session.prefs.location.labelVersion, 2);
   assert.equal(session.weather?.condition, "Clear");
   assert.equal(session.weather?.locationLabel, "San Francisco, California");
   assert.equal(readWeatherPrefs(storage).location.mode, "coords");
@@ -173,6 +174,7 @@ test("saved coordinates reuse without another permission request", async () => {
         lon: -122.4194,
         label: "San Francisco, California",
         labelState: "resolved",
+        labelVersion: 2,
       },
     },
     storage,
@@ -215,6 +217,7 @@ test("normal weather refresh does not reverse-geocode", async () => {
         lon: -122.4194,
         label: "San Francisco, California",
         labelState: "resolved",
+        labelVersion: 2,
       },
       cache: { weather: SF, fetchedAt: "2026-09-22T17:00:00.000Z" },
     },
@@ -245,6 +248,7 @@ test("fresh cached weather does not reverse-geocode", async () => {
         lon: -122.4194,
         label: "San Francisco, California",
         labelState: "resolved",
+        labelVersion: 2,
       },
       cache: { weather: SF, fetchedAt: "2026-09-22T17:50:00.000Z" },
     },
@@ -292,6 +296,7 @@ test("existing Current location recovers once", async () => {
   assert.equal(lookups, 1);
   assert.equal(session.prefs.location.label, "San Francisco, California");
   assert.equal(session.prefs.location.labelState, "resolved");
+  assert.equal(session.prefs.location.labelVersion, 2);
   assert.equal(session.weather?.locationLabel, "San Francisco, California");
   await session.loadIfNeeded();
   assert.equal(lookups, 1);
@@ -322,8 +327,79 @@ test("failed label recovery does not loop", async () => {
   assert.equal(lookups, 1);
   assert.equal(session.prefs.location.label, FALLBACK_LOCATION_LABEL);
   assert.equal(session.prefs.location.labelState, "fallback");
+  assert.equal(session.prefs.location.labelVersion, 2);
   await session.loadIfNeeded();
   assert.equal(lookups, 1);
+});
+
+test("old state-only label migrates once to the corrected locality", async () => {
+  const storage = new MemoryStorage();
+  writeWeatherPrefs(
+    {
+      v: 1,
+      units: "F",
+      location: {
+        mode: "coords",
+        lat: 37.4275,
+        lon: -122.1697,
+        label: "California",
+        labelState: "resolved",
+      },
+      cache: { weather: { ...SF, locationLabel: "California" }, fetchedAt: "2026-09-22T17:50:00.000Z" },
+    },
+    storage,
+  );
+  let lookups = 0;
+  const session = new WeatherSession({
+    storage,
+    now: () => new Date("2026-09-22T18:00:00.000Z"),
+    resolveLabel: async () => {
+      lookups += 1;
+      return { ok: true, locationLabel: "Stanford, California" };
+    },
+    fetchWeather: async () => {
+      throw new Error("fresh cache must not refetch weather during label migration");
+    },
+  });
+  await session.loadIfNeeded();
+  assert.equal(lookups, 1);
+  assert.equal(session.prefs.location.label, "Stanford, California");
+  assert.equal(session.prefs.location.labelState, "resolved");
+  assert.equal(session.prefs.location.labelVersion, 2);
+  assert.equal(session.weather?.locationLabel, "Stanford, California");
+  await session.loadIfNeeded();
+  assert.equal(lookups, 1);
+});
+
+test("failed V2 migration drops the old state-only label", async () => {
+  const storage = new MemoryStorage();
+  writeWeatherPrefs(
+    {
+      v: 1,
+      units: "F",
+      location: {
+        mode: "coords",
+        lat: 37.4275,
+        lon: -122.1697,
+        label: "California",
+        labelState: "resolved",
+      },
+    },
+    storage,
+  );
+  const session = new WeatherSession({
+    storage,
+    now: () => new Date("2026-09-22T18:00:00.000Z"),
+    resolveLabel: async () => ({ ok: false }),
+    fetchWeather: async () => ({ ok: true, weather: { ...SF, locationLabel: FALLBACK_LOCATION_LABEL } }),
+  });
+  await session.loadIfNeeded();
+  assert.equal(session.labelLookups, 1);
+  assert.equal(session.prefs.location.label, FALLBACK_LOCATION_LABEL);
+  assert.equal(session.prefs.location.labelState, "fallback");
+  assert.equal(session.prefs.location.labelVersion, 2);
+  await session.loadIfNeeded();
+  assert.equal(session.labelLookups, 1);
 });
 
 test("explicit Use my location can resolve a label again", async () => {
@@ -339,6 +415,7 @@ test("explicit Use my location can resolve a label again", async () => {
         lon: -122.42,
         label: FALLBACK_LOCATION_LABEL,
         labelState: "fallback",
+        labelVersion: 2,
       },
     },
     storage,
@@ -378,6 +455,38 @@ test("manual city remains Open-Meteo only", async () => {
   assert.equal(session.labelLookups, 0);
   assert.equal(session.prefs.location.query, "Budapest");
   assert.equal(session.prefs.location.label, "Budapest, Budapest");
+  assert.equal(session.prefs.location.labelVersion, 2);
+});
+
+test("stale weather refresh does not reverse-geocode", async () => {
+  const storage = new MemoryStorage();
+  writeWeatherPrefs(
+    {
+      v: 1,
+      units: "F",
+      location: {
+        mode: "coords",
+        lat: 37.7749,
+        lon: -122.4194,
+        label: "San Francisco, California",
+        labelState: "resolved",
+        labelVersion: 2,
+      },
+      cache: { weather: SF, fetchedAt: "2026-09-22T17:00:00.000Z" },
+    },
+    storage,
+  );
+  const session = new WeatherSession({
+    storage,
+    now: () => new Date("2026-09-22T18:00:00.000Z"),
+    resolveLabel: async () => {
+      throw new Error("stale weather refresh must not reverse-geocode");
+    },
+    fetchWeather: async () => ({ ok: true, weather: { ...SF, locationLabel: FALLBACK_LOCATION_LABEL } }),
+  });
+  await session.refresh();
+  assert.equal(session.labelLookups, 0);
+  assert.equal(session.prefs.location.label, "San Francisco, California");
 });
 
 test("unit preference persists independently of location", () => {

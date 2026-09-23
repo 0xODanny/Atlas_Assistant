@@ -294,13 +294,39 @@ test("Nominatim locality fields normalize to city-level labels", () => {
     /Market|94103/,
   );
   assert.equal(labelFromNominatim({ address: { road: "Market St", postcode: "94103" } }), FALLBACK_LOCATION_LABEL);
+  assert.equal(
+    labelFromNominatim({ address: { city: "Palo Alto", county: "Santa Clara County", state: "California" } }),
+    "Palo Alto, California",
+  );
+  assert.equal(
+    labelFromNominatim({ address: { town: "East Palo Alto", county: "San Mateo County", state: "California" } }),
+    "East Palo Alto, California",
+  );
+  assert.equal(
+    labelFromNominatim({ address: { hamlet: "Stanford", county: "Santa Clara County", state: "California" } }),
+    "Stanford, California",
+  );
+  assert.equal(
+    labelFromNominatim({ address: { county: "Santa Clara County", state: "California" } }),
+    FALLBACK_LOCATION_LABEL,
+  );
+  assert.equal(labelFromNominatim({ address: { state: "California" } }), FALLBACK_LOCATION_LABEL);
+  assert.equal(labelFromNominatim({ address: { region: "Central Hungary" } }), FALLBACK_LOCATION_LABEL);
+  assert.equal(
+    labelFromNominatim({ address: { city: "Budapest", region: "Central Hungary", borough: "1st district" } }),
+    "Budapest, Central Hungary",
+  );
+  assert.equal(
+    labelFromNominatim({ address: { city: "São Paulo", state: "São Paulo", suburb: "Sé" } as never }),
+    "São Paulo, São Paulo",
+  );
 });
 
 test("location API returns only a city label", async () => {
   globalThis.fetch = (async (input) => {
     const url = String(input);
     assert.match(url, /nominatim\.openstreetmap\.org\/reverse/);
-    assert.match(url, /zoom=10/);
+    assert.match(url, /zoom=14/);
     return jsonResponse({ address: { city: "San Francisco", state: "California" } });
   }) as typeof fetch;
   const found = await handleLocationRequest(new Request("http://atlas.test/api/weather/location?lat=37.7749&lon=-122.4194"));
@@ -335,7 +361,7 @@ test("weather refresh preserves a useful saved label", () => {
   assert.equal(preferLocationLabel("San Francisco, California", FALLBACK_LOCATION_LABEL), "San Francisco, California");
   assert.equal(isUsefulLocationLabel(FALLBACK_LOCATION_LABEL), false);
   assert.equal(
-    needsLabelRecovery({ mode: "coords", lat: 37.77, lon: -122.42, label: FALLBACK_LOCATION_LABEL }),
+    needsLabelRecovery({ mode: "coords", lat: 37.77, lon: -122.42, label: "California", labelState: "resolved" }),
     true,
   );
   assert.equal(
@@ -343,9 +369,11 @@ test("weather refresh preserves a useful saved label", () => {
       mode: "coords",
       lat: 37.77,
       lon: -122.42,
-      label: FALLBACK_LOCATION_LABEL,
-      labelState: "fallback",
+      label: "Stanford, California",
+      labelState: "resolved",
+      labelVersion: 2,
     }),
     false,
   );
+  assert.equal(needsLabelRecovery({ mode: "manual", query: "Palo Alto", label: "Palo Alto, California" }), false);
 });

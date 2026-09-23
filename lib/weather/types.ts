@@ -22,6 +22,7 @@ export type WeatherLocation = {
   lat?: number;
   lon?: number;
   labelState?: WeatherLabelState;
+  labelVersion?: number;
 };
 
 export type WeatherCache = {
@@ -77,3 +78,4 @@ export const OPEN_METEO_ATTRIBUTION_LABEL = "Weather data by Open-Meteo.com";
 export const OSM_ATTRIBUTION_HREF = "https://www.openstreetmap.org/copyright";
 export const OSM_ATTRIBUTION_LABEL = "© OpenStreetMap contributors";
 export const FALLBACK_LOCATION_LABEL = "Current location";
+export const LOCATION_LABEL_VERSION = 2;

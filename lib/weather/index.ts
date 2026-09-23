@@ -2,6 +2,7 @@ export { conditionFromWmo, celsiusToFahrenheit, formatTemperature } from "./cond
 export { GEOLOCATION_OPTIONS, requestDevicePosition } from "./geolocation";
 export { handleWeatherRequest, publicWeather } from "./http";
 export {
+  applyLabelResolution,
   applyWeatherFailure,
   applyWeatherSuccess,
   clearWeatherLocation,
@@ -27,6 +28,7 @@ export { getCurrentWeather, parseWeatherSearchParams } from "./service";
 export { fetchLocationLabelFromApi, fetchWeatherFromApi, WeatherSession } from "./session";
 export {
   FALLBACK_LOCATION_LABEL,
+  LOCATION_LABEL_VERSION,
   OPEN_METEO_ATTRIBUTION_HREF,
   OPEN_METEO_ATTRIBUTION_LABEL,
   OSM_ATTRIBUTION_HREF,

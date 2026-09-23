@@ -1,5 +1,6 @@
 import { requestDevicePosition, type DeviceGeolocation } from "./geolocation";
 import {
+  applyLabelResolution,
   applyWeatherFailure,
   applyWeatherSuccess,
   clearWeatherLocation,
@@ -7,7 +8,6 @@ import {
   isUsefulLocationLabel,
   needsLabelRecovery,
   parseCurrentWeather,
-  preferLocationLabel,
   readWeatherPrefs,
   shouldFetchWeather,
   withUnits,
@@ -15,6 +15,7 @@ import {
   type WeatherStorage,
 } from "./prefs";
 import type { CurrentWeather, GeoFailureReason, WeatherPrefs, WeatherQuery, WeatherResult, WeatherUnits } from "./types";
+import { LOCATION_LABEL_VERSION } from "./types";
 
 export type WeatherPhase = "unconfigured" | "locating" | "city" | "loading" | "ready" | "error";
 
@@ -116,20 +117,7 @@ export class WeatherSession {
     this.labelLookups += 1;
     try {
       const resolved = await this.resolveLabel(lat, lon);
-      const incoming = resolved.ok ? resolved.locationLabel : undefined;
-      const label = preferLocationLabel(this.prefs.location.label, incoming);
-      const cache = this.prefs.cache
-        ? { ...this.prefs.cache, weather: { ...this.prefs.cache.weather, locationLabel: label } }
-        : this.prefs.cache;
-      this.commit({
-        ...this.prefs,
-        location: {
-          ...this.prefs.location,
-          label,
-          labelState: isUsefulLocationLabel(label) ? "resolved" : "fallback",
-        },
-        cache,
-      });
+      this.commit(applyLabelResolution(this.prefs, resolved));
     } finally {
       this.labelLookupInFlight = false;
     }
@@ -177,18 +165,12 @@ export class WeatherSession {
     this.labelLookups += 1;
     const resolved = await this.resolveLabel(position.latitude, position.longitude);
     if (requestId !== this.locationRequestId) return this.state;
-    const incoming = resolved.ok ? resolved.locationLabel : undefined;
-    const label = preferLocationLabel(this.prefs.location.label, incoming);
-    this.commit({
-      ...this.prefs,
-      location: {
-        mode: "coords",
+    this.commit(
+      applyLabelResolution(this.prefs, resolved, {
         lat: position.latitude,
         lon: position.longitude,
-        label,
-        labelState: isUsefulLocationLabel(label) ? "resolved" : "fallback",
-      },
-    });
+      }),
+    );
     return this.refresh();
   }
 
@@ -229,6 +211,7 @@ export class WeatherSession {
             lat: result.weather.latitude,
             lon: result.weather.longitude,
             labelState: isUsefulLocationLabel(result.weather.locationLabel) ? "resolved" : undefined,
+            labelVersion: LOCATION_LABEL_VERSION,
           },
         },
         result.weather,
