@@ -5,9 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   calendarCursorFromDateParam,
   calendarHref,
+  calendarLocationMemory,
+  calendarRestoreHref,
   eventDetailHref,
   formatCalendarDateParam,
   readCalendarLocation,
+  rememberCalendarLocation,
+  stampCalendarHistory,
   type CalendarViewMode,
 } from "@/lib/navigation/back";
 import { formatWeekRange } from "@/lib/calendar/weekOverview";
@@ -15,9 +19,10 @@ import { formatMonth, formatYear } from "@/lib/format";
 import { useNow } from "@/lib/hooks/useNow";
 import { useVisualEvents } from "@/lib/hooks/useVisualMode";
 import { useAppState } from "@/lib/state/provider";
-import { addDays, sameZonedDay, startOfZonedDay, zonedParts } from "@/lib/time";
+import { addDays, addMonths, sameZonedDay, startOfZonedDay, zonedParts } from "@/lib/time";
 import { DateStrip } from "./DateStrip";
 import { DayView } from "./DayView";
+import { MonthView } from "./MonthView";
 import { WeekView } from "./WeekView";
 
 function startOfWeek(date: Date, timezone: string): Date {
@@ -38,9 +43,11 @@ export function CalendarView() {
     typeof window !== "undefined" && window.location.pathname === "/calendar"
       ? new URLSearchParams(window.location.search)
       : null;
+  const memory = typeof window !== "undefined" ? calendarLocationMemory() : null;
   const resolved = readCalendarLocation(
     { view: searchParams.get("view"), date: searchParams.get("date") },
     browserSearch ? { view: browserSearch.get("view"), date: browserSearch.get("date") } : null,
+    memory,
   );
   const view: CalendarViewMode = resolved.view;
   const cursor =
@@ -54,16 +61,39 @@ export function CalendarView() {
     date: formatCalendarDateParam(cursor, timezone),
   };
 
+  useEffect(() => {
+    if (resolved.date) rememberCalendarLocation({ view, date: resolved.date });
+    const current = `${window.location.pathname}${window.location.search}`;
+    const restore = calendarRestoreHref(current, calendarLocationMemory());
+    if (restore && restore !== current) {
+      router.replace(restore, { scroll: false });
+    }
+  }, [resolved.date, view, router]);
+
   function openEvent(id: string) {
+    rememberCalendarLocation(location);
+    stampCalendarHistory(location);
     router.push(eventDetailHref(id, "calendar", location));
   }
 
   function setView(next: CalendarViewMode) {
-    router.replace(calendarHref({ view: next, date: location.date }), { scroll: false });
+    const href = calendarHref({ view: next, date: location.date });
+    rememberCalendarLocation({ view: next, date: location.date });
+    router.replace(href, { scroll: false });
   }
 
-  function setCursor(next: Date) {
-    router.replace(calendarHref({ view, date: formatCalendarDateParam(next, timezone) }), { scroll: false });
+  function setCursor(next: Date, nextView: CalendarViewMode = view) {
+    const date = formatCalendarDateParam(next, timezone);
+    rememberCalendarLocation({ view: nextView, date });
+    router.replace(calendarHref({ view: nextView, date }), { scroll: false });
+  }
+
+  function stepCursor(direction: -1 | 1) {
+    if (view === "month") {
+      setCursor(addMonths(cursor, direction, timezone));
+      return;
+    }
+    setCursor(addDays(cursor, direction * 7));
   }
 
   return (
@@ -81,6 +111,9 @@ export function CalendarView() {
           </button>
           <button type="button" className="day-chip" aria-pressed={view === "week"} onClick={() => setView("week")}>
             Week
+          </button>
+          <button type="button" className="day-chip" aria-pressed={view === "month"} onClick={() => setView("month")}>
+            Month
           </button>
           {sameZonedDay(cursor, now, timezone) ? null : (
             <button type="button" className="day-chip" onClick={() => setCursor(now)}>
@@ -101,9 +134,9 @@ export function CalendarView() {
       <div className="mt-3 flex items-center gap-1">
         <button
           type="button"
-          className="btn-quiet min-w-11 text-[1.35rem]"
-          aria-label="Previous week"
-          onClick={() => setCursor(addDays(cursor, -7))}
+          className="calendar-step"
+          aria-label={view === "month" ? "Previous month" : "Previous week"}
+          onClick={() => stepCursor(-1)}
         >
           ‹
         </button>
@@ -119,14 +152,14 @@ export function CalendarView() {
           </div>
         ) : (
           <p className="week-range" data-atlas-week-range>
-            {formatWeekRange(cursor, timezone)}
+            {view === "month" ? formatMonth(cursor.toISOString(), timezone) : formatWeekRange(cursor, timezone)}
           </p>
         )}
         <button
           type="button"
-          className="btn-quiet min-w-11 text-[1.35rem]"
-          aria-label="Next week"
-          onClick={() => setCursor(addDays(cursor, 7))}
+          className="calendar-step"
+          aria-label={view === "month" ? "Next month" : "Next week"}
+          onClick={() => stepCursor(1)}
         >
           ›
         </button>
@@ -144,7 +177,8 @@ export function CalendarView() {
             onMove={(id) => openSheet({ name: "move", eventId: id })}
             onSelect={openEvent}
           />
-        ) : (
+        ) : null}
+        {view === "week" ? (
           <WeekView
             date={cursor}
             events={events}
@@ -154,7 +188,16 @@ export function CalendarView() {
             onSelect={openEvent}
             onAdd={() => openSheet({ name: "event", mode: "create" })}
           />
-        )}
+        ) : null}
+        {view === "month" ? (
+          <MonthView
+            date={cursor}
+            events={events}
+            profile={state.profile}
+            now={now}
+            onSelectDay={(next) => setCursor(next, "day")}
+          />
+        ) : null}
       </div>
 
       <button type="button" aria-label="Add event" className="add-fab md:hidden" onClick={() => openSheet({ name: "event", mode: "create" })}>

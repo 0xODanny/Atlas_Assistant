@@ -96,6 +96,15 @@ export function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 86_400_000);
 }
 
+export function addMonths(date: Date, months: number, timeZone: string): Date {
+  const parts = zonedParts(timeZone, date);
+  const index = parts.year * 12 + (parts.month - 1) + months;
+  const year = Math.floor(index / 12);
+  const month = (index % 12) + 1;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return zonedLocalToUtc(timeZone, year, month, Math.min(parts.day, lastDay), 12, 0);
+}
+
 export function addMinutes(date: Date, minutes: number): Date {
   return new Date(date.getTime() + minutes * 60_000);
 }

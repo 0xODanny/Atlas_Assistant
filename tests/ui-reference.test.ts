@@ -102,6 +102,9 @@ test("up next only renders for an active or future event", () => {
   assert.equal(nextActiveEvent([ended, later], new Date("2026-09-21T14:00:00.000Z"))?.title, "Later");
   assert.match(today, /\{next \? <UpNext/);
   assert.match(today, /data-atlas-up-next/);
+  assert.match(today, /eventDetailHref\(event\.id, "today"\)/);
+  assert.match(today, /up-next-card/);
+  assert.match(today, /up-next-join/);
 });
 
 test("assistant alternatives stay proposals until Apply", () => {

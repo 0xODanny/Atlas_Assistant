@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { categoryLabel, eventDurationMinutes, formatAllDayLabel, formatAllDayRange, formatDuration, formatRange } from "@/lib/format";
 import {
@@ -11,6 +11,7 @@ import {
   isEventPrepareParam,
 } from "@/lib/navigation/back";
 import { descriptionSegments } from "@/lib/present/description";
+import { ConfirmDeleteSheet } from "../sheets/ConfirmDeleteSheet";
 import { PreparePanel } from "../sheets/PrepareSheet";
 import { participantSummary, presentWorkoutDetails } from "@/lib/present/event";
 import {
@@ -27,6 +28,7 @@ export function EventDetails({ eventId }: { eventId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { state, openSheet, deleteEvent } = useAppState();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const event = state.events.find((item) => item.id === eventId);
   const timezone = state.profile.timezone;
   const from = searchParams.get("from");
@@ -180,16 +182,24 @@ export function EventDetails({ eventId }: { eventId: string }) {
         <button
           type="button"
           className="event-action is-danger"
-          onClick={() => {
-            void deleteEvent(event.id).then((result) => {
-              if (result.ok) router.push(returnTo);
-            });
-          }}
+          onClick={() => setConfirmDelete(true)}
         >
           <span className="event-action-label">Delete</span>
         </button>
       </div>
       )}
+      {confirmDelete ? (
+        <ConfirmDeleteSheet
+          title={event.title}
+          category={event.category}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => {
+            void deleteEvent(event.id).then((result) => {
+              if (result.ok) router.push(returnTo);
+            });
+          }}
+        />
+      ) : null}
     </article>
   );
 }

@@ -3,7 +3,9 @@ import { pad, zonedLocalToUtc, zonedParts } from "../time";
 export const ATLAS_ROOTS = ["/today", "/calendar", "/assistant", "/settings"] as const;
 
 export type EventReturnFrom = "today" | "calendar";
-export type CalendarViewMode = "day" | "week";
+export type CalendarViewMode = "day" | "week" | "month";
+
+const CALENDAR_MEMORY_KEY = "atlas.calendar.location";
 
 export type CalendarLocationInput = {
   view?: string | null;
@@ -19,7 +21,7 @@ export function eventFromPath(pathname: string): EventReturnFrom | null {
 }
 
 export function parseCalendarView(value?: string | null): CalendarViewMode | null {
-  return value === "day" || value === "week" ? value : null;
+  return value === "day" || value === "week" || value === "month" ? value : null;
 }
 
 export function parseCalendarDate(value?: string | null): string | null {
@@ -63,6 +65,7 @@ export function calendarHref(input: CalendarLocationInput = {}): string {
 export function readCalendarLocation(
   hook: CalendarLocationInput,
   browser?: CalendarLocationInput | null,
+  memory?: CalendarLocationInput | null,
 ): { view: CalendarViewMode; date: string | null } {
   const hookDate = parseCalendarDate(hook.date);
   const hookView = parseCalendarView(hook.view);
@@ -70,7 +73,45 @@ export function readCalendarLocation(
   const browserDate = parseCalendarDate(browser?.date);
   const browserView = parseCalendarView(browser?.view);
   if (browserDate) return { view: browserView ?? hookView ?? "week", date: browserDate };
-  return { view: hookView ?? "week", date: null };
+  const memoryDate = parseCalendarDate(memory?.date);
+  const memoryView = parseCalendarView(memory?.view);
+  if (memoryDate) return { view: memoryView ?? hookView ?? browserView ?? "week", date: memoryDate };
+  return { view: hookView ?? browserView ?? memoryView ?? "week", date: null };
+}
+
+export function calendarLocationMemory(): CalendarLocationInput | null {
+  if (typeof sessionStorage === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(CALENDAR_MEMORY_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CalendarLocationInput;
+    const date = parseCalendarDate(parsed.date);
+    if (!date) return null;
+    return { view: parseCalendarView(parsed.view), date };
+  } catch {
+    return null;
+  }
+}
+
+export function rememberCalendarLocation(input: CalendarLocationInput): void {
+  const date = parseCalendarDate(input.date);
+  if (!date || typeof sessionStorage === "undefined") return;
+  sessionStorage.setItem(
+    CALENDAR_MEMORY_KEY,
+    JSON.stringify({ view: parseCalendarView(input.view) ?? "week", date }),
+  );
+}
+
+export function stampCalendarHistory(input: CalendarLocationInput): void {
+  if (typeof window === "undefined") return;
+  const date = parseCalendarDate(input.date);
+  const view = parseCalendarView(input.view) ?? "week";
+  if (!date) return;
+  const href = calendarHref({ view, date });
+  const current = `${window.location.pathname}${window.location.search}`;
+  if (window.location.pathname === "/calendar" && current !== href) {
+    window.history.replaceState(window.history.state, "", href);
+  }
 }
 
 export function calendarAutoReplaceHref(currentHref: string): string | null {
@@ -79,6 +120,22 @@ export function calendarAutoReplaceHref(currentHref: string): string | null {
     if (url.pathname !== "/calendar") return null;
     if (parseCalendarDate(url.searchParams.get("date"))) return null;
     return null;
+  } catch {
+    return null;
+  }
+}
+
+export function calendarRestoreHref(currentHref: string, memory?: CalendarLocationInput | null): string | null {
+  try {
+    const url = new URL(currentHref, "https://atlas.local");
+    if (url.pathname !== "/calendar") return null;
+    if (parseCalendarDate(url.searchParams.get("date"))) return null;
+    const date = parseCalendarDate(memory?.date);
+    if (!date) return null;
+    return calendarHref({
+      view: parseCalendarView(memory?.view) ?? parseCalendarView(url.searchParams.get("view")) ?? "week",
+      date,
+    });
   } catch {
     return null;
   }

@@ -35,6 +35,9 @@ test("nav geometry is compact, tokenized, and applies safe-area once", () => {
     css,
     /padding-bottom:\s*calc\(var\(--atlas-bottom-nav-height\) \+ 18px \+ env\(safe-area-inset-bottom\)\)/,
   );
+  assert.match(css, /\.calendar-step[\s\S]*min-height:\s*var\(--atlas-touch\)/);
+  assert.match(css, /\.calendar-step[\s\S]*min-width:\s*var\(--atlas-touch\)/);
+  assert.match(css, /orientation:\s*landscape[\s\S]*\.atlas-main[\s\S]*overflow-y:\s*auto/);
 });
 
 test("keyboard-open chrome uses visualViewport inset instead of a hardcoded bottom offset", () => {

@@ -662,7 +662,32 @@ textarea {
   border-radius: 1.25rem;
   box-shadow: 0 12px 28px rgba(62, 28, 56, 0.16);
   color: var(--atlas-surface);
+  position: relative;
+}
+
+.up-next-card {
+  color: inherit;
+  display: block;
+  min-height: var(--atlas-touch);
   padding: 1.3rem 1.3rem 1.35rem;
+  text-decoration: none;
+}
+
+.up-next.has-join .up-next-card {
+  padding-bottom: 3.25rem;
+  padding-right: 6.5rem;
+}
+
+.up-next-join {
+  bottom: 1.1rem;
+  color: var(--atlas-surface);
+  display: inline-flex;
+  font-size: 16px;
+  min-height: var(--atlas-touch);
+  align-items: center;
+  position: absolute;
+  right: 1.15rem;
+  z-index: 2;
 }
 
 .calendar-now {
@@ -1529,6 +1554,175 @@ html.is-keyboard-open .atlas-composer-dock {
   font-size: 16px;
   min-width: 0;
   text-align: center;
+}
+
+.calendar-step {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--atlas-ink);
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 1.5rem;
+  height: var(--atlas-touch);
+  justify-content: center;
+  line-height: 1;
+  min-height: var(--atlas-touch);
+  min-width: var(--atlas-touch);
+  padding: 0;
+  width: var(--atlas-touch);
+}
+
+.month-view {
+  min-width: 0;
+}
+
+.month-weekdays {
+  color: var(--atlas-meta);
+  display: grid;
+  font-size: 12px;
+  font-weight: 500;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  letter-spacing: 0.08em;
+  padding: 0 0.15rem 0.45rem;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.month-grid {
+  display: grid;
+  gap: 0.2rem;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.month-cell {
+  align-items: flex-start;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.7rem;
+  color: var(--atlas-ink);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-height: 3.4rem;
+  min-width: 0;
+  padding: 0.28rem 0.2rem 0.35rem;
+  text-align: left;
+}
+
+.month-cell.is-outside {
+  color: var(--atlas-meta);
+  opacity: 0.55;
+}
+
+.month-cell.is-today {
+  border-color: rgba(62, 28, 56, 0.28);
+}
+
+.month-cell.is-selected {
+  background: #f3f3f5;
+  border-color: rgba(62, 28, 56, 0.5);
+}
+
+.month-cell-day {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  width: 100%;
+}
+
+.month-cell-marks {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.month-cell-title {
+  border-radius: 999px;
+  color: var(--atlas-ink);
+  display: none;
+  font-size: 10px;
+  line-height: 1.2;
+  overflow: hidden;
+  padding: 0.12rem 0.28rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.month-cell-dots {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem;
+  min-height: 0.45rem;
+}
+
+.month-cell-dot {
+  background: var(--atlas-plum);
+  border-radius: 999px;
+  display: block;
+  height: 0.35rem;
+  width: 0.35rem;
+}
+
+.month-cell-more {
+  color: var(--atlas-meta);
+  font-size: 10px;
+}
+
+@media (min-width: 768px), (orientation: landscape) and (min-width: 600px) {
+  .month-cell {
+    min-height: 5.4rem;
+  }
+
+  .month-cell-title {
+    display: block;
+  }
+
+  .month-cell-dots {
+    display: none;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 540px) {
+  .atlas-shell {
+    border: 0 !important;
+    box-shadow: none !important;
+    flex-direction: column !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 100dvh !important;
+    overflow: visible !important;
+  }
+
+  .atlas-shell > aside {
+    display: none !important;
+  }
+
+  .atlas-header {
+    display: flex !important;
+  }
+
+  .atlas-nav-chrome {
+    display: flex !important;
+  }
+
+  .atlas-main {
+    flex: 1 1 auto !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding: 1rem var(--atlas-page-pad) var(--atlas-bottom-inset) !important;
+  }
+
+  .add-fab {
+    display: flex !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

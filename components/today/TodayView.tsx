@@ -16,6 +16,7 @@ import { addDays, startOfZonedDay } from "@/lib/time";
 import { availabilitySearchStart } from "@/lib/time/clock";
 import { useEffect } from "react";
 import type { CalendarEvent } from "@/lib/types/event";
+import { eventDetailHref } from "@/lib/navigation/back";
 import { EmptyState, InlineStatus } from "../ui/EmptyState";
 import { TodayComposer } from "./TodayComposer";
 import { TodayTimeline } from "./TodayTimeline";
@@ -146,22 +147,23 @@ function UpNext({
   const meta = [when, place].filter(Boolean).join(" · ");
 
   return (
-    <section className="up-next mt-7" data-atlas-up-next>
-      <p className="text-[12px] uppercase tracking-[0.18em] text-white/70">Up next</p>
-      <h2 className="section-title mt-3 text-[var(--atlas-surface)]">{event.title}</h2>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[14px] text-white/80">{meta}</p>
-        {join ? (
-          <a
-            href={join.href}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex min-h-11 items-center text-[16px] text-white"
-          >
-            {join.label} →
-          </a>
-        ) : null}
-      </div>
+    <section className={`up-next mt-7${join ? " has-join" : ""}`} data-atlas-up-next>
+      <Link href={eventDetailHref(event.id, "today")} className="up-next-card">
+        <p className="text-[12px] uppercase tracking-[0.18em] text-white/70">Up next</p>
+        <h2 className="section-title mt-3 text-[var(--atlas-surface)]">{event.title}</h2>
+        <p className="mt-3 text-[14px] text-white/80">{meta}</p>
+      </Link>
+      {join ? (
+        <a
+          href={join.href}
+          target="_blank"
+          rel="noreferrer"
+          className="up-next-join"
+          onClick={(eventClick) => eventClick.stopPropagation()}
+        >
+          {join.label} →
+        </a>
+      ) : null}
     </section>
   );
 }

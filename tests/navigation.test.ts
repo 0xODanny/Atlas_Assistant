@@ -7,6 +7,7 @@ import {
   calendarAutoReplaceHref,
   calendarCursorFromDateParam,
   calendarHref,
+  calendarRestoreHref,
   eventDetailHref,
   eventFromPath,
   eventPrepareHref,
@@ -81,6 +82,9 @@ test("event detail preserves Today or Calendar context and never returns to Sett
   assert.match(calendar, /function setView[\s\S]*router\.replace\(calendarHref/);
   assert.match(calendar, /function setCursor[\s\S]*router\.replace\(calendarHref/);
   assert.match(calendar, /readCalendarLocation/);
+  assert.match(calendar, /calendarRestoreHref/);
+  assert.match(calendar, /stampCalendarHistory/);
+  assert.match(calendar, /rememberCalendarLocation/);
   assert.doesNotMatch(calendar, /useEffect\(\(\) => \{\s*const href = calendarHref/);
 });
 
@@ -101,6 +105,21 @@ test("restored Calendar day or week URLs are never replaced with today", () => {
     date: "2026-09-28",
   });
   assert.deepEqual(readCalendarLocation({ view: "agenda", date: "nope" }, null), { view: "week", date: null });
+  assert.deepEqual(
+    readCalendarLocation({ view: null, date: null }, { view: null, date: null }, { view: "day", date: "2026-09-28" }),
+    { view: "day", date: "2026-09-28" },
+  );
+  assert.equal(calendarRestoreHref("/calendar?view=day&date=2026-09-28", { view: "week", date: "2026-09-21" }), null);
+  assert.equal(calendarRestoreHref("/calendar?view=week&date=2026-09-28", { view: "day", date: "2026-09-21" }), null);
+  assert.equal(
+    calendarRestoreHref("/calendar", { view: "day", date: "2026-09-28" }),
+    "/calendar?view=day&date=2026-09-28",
+  );
+  assert.equal(
+    calendarRestoreHref("/calendar", { view: "month", date: "2026-10-05" }),
+    "/calendar?view=month&date=2026-10-05",
+  );
+  assert.equal(calendarRestoreHref("/calendar", null), null);
 });
 
 test("Prepare Me is a history step on the event URL", () => {
@@ -123,6 +142,7 @@ test("Prepare Me is a history step on the event URL", () => {
 test("calendar return state only accepts validated view and date values", () => {
   assert.equal(parseCalendarView("day"), "day");
   assert.equal(parseCalendarView("week"), "week");
+  assert.equal(parseCalendarView("month"), "month");
   assert.equal(parseCalendarView("agenda"), null);
   assert.equal(parseCalendarView("../week"), null);
   assert.equal(parseCalendarDate("2026-09-22"), "2026-09-22");
@@ -196,4 +216,31 @@ test("bottom navigation is an opaque fixed chrome surface", () => {
   assert.match(css, /--atlas-composer-height/);
   assert.match(shell, /atlas-nav-chrome/);
   assert.match(shell, /sheet \? null/);
+});
+
+test("delete requires confirmation before invoking the existing delete flow", () => {
+  const details = readFileSync(join(ROOT, "components/events/EventDetails.tsx"), "utf8");
+  const confirm = readFileSync(join(ROOT, "components/sheets/ConfirmDeleteSheet.tsx"), "utf8");
+  assert.match(details, /setConfirmDelete\(true\)/);
+  assert.match(details, /ConfirmDeleteSheet/);
+  assert.match(details, /onConfirm=\{\(\) => \{[\s\S]*deleteEvent\(event\.id\)/);
+  assert.doesNotMatch(details, /onClick=\{\(\) => \{\s*void deleteEvent/);
+  assert.match(confirm, /Delete \$\{noun\}\?/);
+  assert.match(confirm, /onCancel/);
+  assert.doesNotMatch(confirm, /window\.confirm/);
+  assert.doesNotMatch(details, /window\.confirm/);
+});
+
+test("month view is a validated calendar location and preserves return context", () => {
+  assert.equal(calendarHref({ view: "month", date: "2026-09-22" }), "/calendar?view=month&date=2026-09-22");
+  assert.equal(
+    eventDetailHref("evt_1", "calendar", { view: "month", date: "2026-09-22" }),
+    "/events/evt_1?from=calendar&view=month&date=2026-09-22",
+  );
+  assert.equal(eventReturnPath("calendar", { view: "month", date: "2026-09-22" }), "/calendar?view=month&date=2026-09-22");
+  const calendar = readFileSync(join(ROOT, "components/calendar/CalendarView.tsx"), "utf8");
+  assert.match(calendar, /view === "month"/);
+  assert.match(calendar, /addMonths/);
+  assert.match(calendar, /setCursor\(next, "day"\)/);
+  assert.match(calendar, /Previous month/);
 });
