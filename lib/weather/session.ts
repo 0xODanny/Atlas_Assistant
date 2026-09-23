@@ -1,4 +1,5 @@
 import { requestDevicePosition, type DeviceGeolocation } from "./geolocation";
+import { isAbortError } from "./reverseGeocode";
 import {
   applyLabelResolution,
   applyWeatherFailure,
@@ -14,22 +15,50 @@ import {
   writeWeatherPrefs,
   type WeatherStorage,
 } from "./prefs";
-import type { CurrentWeather, GeoFailureReason, WeatherPrefs, WeatherQuery, WeatherResult, WeatherUnits } from "./types";
+import type {
+  CurrentWeather,
+  GeoFailureReason,
+  LocationResolution,
+  WeatherPrefs,
+  WeatherQuery,
+  WeatherResult,
+  WeatherUnits,
+} from "./types";
 import { LOCATION_LABEL_VERSION } from "./types";
 
 export type WeatherPhase = "unconfigured" | "locating" | "city" | "loading" | "ready" | "error";
 
 export type WeatherClientFetch = (query: WeatherQuery) => Promise<WeatherResult>;
 
-export type LocationLabelResult = { ok: true; locationLabel: string } | { ok: false };
+export type LocationLabelFailure = Exclude<LocationResolution, "ok">;
+
+export type LocationLabelResult =
+  | { ok: true; locationLabel: string; resolution?: "ok" }
+  | { ok: false; resolution?: LocationLabelFailure };
 
 export type LocationLabelFetch = (latitude: number, longitude: number) => Promise<LocationLabelResult>;
+
+export type LocateStep = "position" | "place" | null;
+
+export const PLACE_RESOLUTION_MESSAGES: Record<LocationLabelFailure, string> = {
+  no_locality: "Couldn't determine the city for this location.",
+  provider_error: "Couldn't look up the place name right now.",
+  rate_limited: "Place-name lookup is temporarily unavailable.",
+  timeout: "Place-name lookup timed out.",
+  invalid_response: "Couldn't determine the place name.",
+};
+
+export function placeResolutionMessage(resolution: LocationLabelFailure): string {
+  return PLACE_RESOLUTION_MESSAGES[resolution];
+}
 
 export type WeatherSessionState = {
   prefs: WeatherPrefs;
   phase: WeatherPhase;
   error: string | null;
   geoRequests: number;
+  placeNotice: string | null;
+  locateStep: LocateStep;
 };
 
 function queryFromPrefs(prefs: WeatherPrefs): WeatherQuery | null {
@@ -56,6 +85,8 @@ function phaseFor(prefs: WeatherPrefs, overlay: WeatherPhase | null, error: stri
 export class WeatherSession {
   prefs: WeatherPrefs;
   error: string | null = null;
+  placeNotice: string | null = null;
+  locateStep: LocateStep = null;
   geoRequests = 0;
   labelLookups = 0;
   private locationRequestId = 0;
@@ -96,6 +127,8 @@ export class WeatherSession {
       phase: phaseFor(this.prefs, this.overlay, this.error),
       error: this.error,
       geoRequests: this.geoRequests,
+      placeNotice: this.placeNotice,
+      locateStep: this.locateStep,
     };
   }
 
@@ -151,20 +184,27 @@ export class WeatherSession {
     this.locationRequestId += 1;
     const requestId = this.locationRequestId;
     this.overlay = "locating";
+    this.locateStep = "position";
+    this.placeNotice = null;
     this.error = null;
     this.notify();
     const position = await requestDevicePosition(this.geolocation);
     if (requestId !== this.locationRequestId) return this.state;
     if (!position.ok) {
       this.overlay = "city";
+      this.locateStep = null;
       this.error = geoErrorMessage(position.reason);
       this.notify();
       return this.state;
     }
-    this.overlay = this.weather ? null : "loading";
+    this.locateStep = "place";
+    this.notify();
     this.labelLookups += 1;
     const resolved = await this.resolveLabel(position.latitude, position.longitude);
     if (requestId !== this.locationRequestId) return this.state;
+    this.locateStep = null;
+    this.placeNotice = resolved.ok ? null : placeResolutionMessage(resolved.resolution ?? "invalid_response");
+    this.overlay = this.weather ? null : "loading";
     this.commit(
       applyLabelResolution(this.prefs, resolved, {
         lat: position.latitude,
@@ -176,6 +216,8 @@ export class WeatherSession {
 
   beginCityEntry() {
     this.locationRequestId += 1;
+    this.placeNotice = null;
+    this.locateStep = null;
     this.overlay = "city";
     this.notify();
     return this.state;
@@ -190,6 +232,8 @@ export class WeatherSession {
 
   async submitCity(rawQuery: string) {
     this.overlay = "loading";
+    this.placeNotice = null;
+    this.locateStep = null;
     this.error = null;
     this.notify();
     const result = await this.fetchWeather({ kind: "city", q: rawQuery });
@@ -227,6 +271,8 @@ export class WeatherSession {
 
   clearLocation() {
     this.error = null;
+    this.placeNotice = null;
+    this.locateStep = null;
     this.overlay = null;
     return this.commit(clearWeatherLocation(this.prefs));
   }
@@ -249,11 +295,42 @@ export async function fetchLocationLabelFromApi(
       `/api/weather/location?lat=${encodeURIComponent(String(latitude))}&lon=${encodeURIComponent(String(longitude))}`,
       { headers: { Accept: "application/json" } },
     );
-    const payload = (await response.json()) as { locationLabel?: string };
-    if (!response.ok || !isUsefulLocationLabel(payload.locationLabel)) return { ok: false };
-    return { ok: true, locationLabel: payload.locationLabel!.trim() };
-  } catch {
-    return { ok: false };
+    if (!response.ok) {
+      return { ok: false, resolution: response.status === 429 ? "rate_limited" : "provider_error" };
+    }
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      return { ok: false, resolution: "invalid_response" };
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return { ok: false, resolution: "invalid_response" };
+    }
+    const record = payload as { locationLabel?: unknown; resolution?: unknown };
+    const resolution = record.resolution;
+    if (
+      resolution === "ok" &&
+      typeof record.locationLabel === "string" &&
+      isUsefulLocationLabel(record.locationLabel)
+    ) {
+      return { ok: true, locationLabel: record.locationLabel.trim(), resolution: "ok" };
+    }
+    if (
+      resolution === "no_locality" ||
+      resolution === "provider_error" ||
+      resolution === "rate_limited" ||
+      resolution === "timeout" ||
+      resolution === "invalid_response"
+    ) {
+      return { ok: false, resolution };
+    }
+    if (typeof record.locationLabel === "string" && isUsefulLocationLabel(record.locationLabel)) {
+      return { ok: true, locationLabel: record.locationLabel.trim(), resolution: "ok" };
+    }
+    return { ok: false, resolution: "invalid_response" };
+  } catch (error) {
+    return { ok: false, resolution: isAbortError(error) ? "timeout" : "provider_error" };
   }
 }
 

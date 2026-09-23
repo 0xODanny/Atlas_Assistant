@@ -63,6 +63,14 @@ export type WeatherSuccess = {
 
 export type WeatherResult = WeatherSuccess | WeatherFailure;
 
+export type LocationResolution =
+  | "ok"
+  | "no_locality"
+  | "provider_error"
+  | "rate_limited"
+  | "timeout"
+  | "invalid_response";
+
 export type GeoFailureReason = "denied" | "unavailable" | "unsupported" | "timeout";
 
 export type GeoResult =

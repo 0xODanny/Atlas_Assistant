@@ -23,7 +23,7 @@ export function TodayWeather() {
       {weather.phase === "locating" ? (
         <div className="today-weather-setup">
           <p className="weather-status" aria-live="polite">
-            Getting location…
+            {weather.locateStep === "place" ? "Finding place name…" : "Getting location…"}
           </p>
           <button type="button" className="today-weather-add" onClick={weather.beginCityEntry}>
             Enter a city
@@ -68,6 +68,11 @@ export function TodayWeather() {
           </p>
           <p className="today-weather-place">{weather.locationLabel}</p>
         </Link>
+      ) : null}
+      {weather.placeNotice && weather.phase !== "locating" && weather.phase !== "city" ? (
+        <p className="weather-status" role="status">
+          {weather.placeNotice}
+        </p>
       ) : null}
 
       <a className="sr-only" href={OPEN_METEO_ATTRIBUTION_HREF}>

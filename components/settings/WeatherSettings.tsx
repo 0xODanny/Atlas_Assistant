@@ -42,7 +42,12 @@ export function WeatherSettings() {
       <SettingRow label="Location" value={weather.locationLabel ?? "Not configured"} />
       {weather.phase === "locating" ? (
         <p className="weather-status" aria-live="polite">
-          Getting location…
+          {weather.locateStep === "place" ? "Finding place name…" : "Getting location…"}
+        </p>
+      ) : null}
+      {weather.placeNotice && weather.phase !== "locating" && weather.phase !== "city" ? (
+        <p className="weather-status" role="status">
+          {weather.placeNotice}
         </p>
       ) : null}
       {weather.phase === "city" ? (

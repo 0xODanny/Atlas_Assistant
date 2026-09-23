@@ -7,7 +7,8 @@ import { fulfillIntent } from "../lib/assistant/fulfill";
 import { createSeedState } from "../lib/data/seed";
 import { GEOLOCATION_OPTIONS, requestDevicePosition } from "../lib/weather/geolocation";
 import { readWeatherPrefs, writeWeatherPrefs } from "../lib/weather/prefs";
-import { WeatherSession } from "../lib/weather/session";
+import { fetchLocationLabelFromApi, PLACE_RESOLUTION_MESSAGES, WeatherSession } from "../lib/weather/session";
+import type { LocationResolution } from "../lib/weather/types";
 import {
   FALLBACK_LOCATION_LABEL,
   OPEN_METEO_ATTRIBUTION_HREF,
@@ -440,8 +441,9 @@ test("explicit Use my location can resolve a label again", async () => {
 });
 
 test("manual city remains Open-Meteo only", async () => {
+  const storage = new MemoryStorage();
   const session = new WeatherSession({
-    storage: new MemoryStorage(),
+    storage,
     now: () => new Date("2026-09-22T18:00:00.000Z"),
     resolveLabel: async () => {
       throw new Error("manual city must not use Nominatim");
@@ -456,6 +458,8 @@ test("manual city remains Open-Meteo only", async () => {
   assert.equal(session.prefs.location.query, "Budapest");
   assert.equal(session.prefs.location.label, "Budapest, Budapest");
   assert.equal(session.prefs.location.labelVersion, 2);
+  assert.equal(session.placeNotice, null);
+  assert.doesNotMatch(storage.getItem(WEATHER_STORAGE_KEY) ?? "", /"resolution"/);
 });
 
 test("stale weather refresh does not reverse-geocode", async () => {
@@ -487,6 +491,8 @@ test("stale weather refresh does not reverse-geocode", async () => {
   await session.refresh();
   assert.equal(session.labelLookups, 0);
   assert.equal(session.prefs.location.label, "San Francisco, California");
+  assert.equal(session.placeNotice, null);
+  assert.doesNotMatch(storage.getItem(WEATHER_STORAGE_KEY) ?? "", /"resolution"/);
 });
 
 test("unit preference persists independently of location", () => {
@@ -587,4 +593,158 @@ test("Today and Settings keep weather compact, labeled, and attributed", () => {
   assert.doesNotMatch(weatherRoute, /nominatim|location/);
   assert.match(readFileSync(join(ROOT, "lib/weather/reverseGeocode.ts"), "utf8"), /nominatim\.openstreetmap\.org\/reverse/);
   assert.match(readFileSync(join(ROOT, "lib/weather/reverseGeocode.ts"), "utf8"), /User-Agent/);
+});
+
+test("explicit Use my location stays resolving through the place lookup", async () => {
+  const geo = fakeGeo({ ok: true, latitude: 37.4419, longitude: -122.143 });
+  const storage = new MemoryStorage();
+  writeWeatherPrefs(
+    {
+      v: 1,
+      units: "F",
+      location: {
+        mode: "coords",
+        lat: 37.44,
+        lon: -122.14,
+        label: FALLBACK_LOCATION_LABEL,
+        labelState: "fallback",
+        labelVersion: 2,
+      },
+      cache: { weather: { ...SF, locationLabel: FALLBACK_LOCATION_LABEL }, fetchedAt: "2026-09-22T17:50:00.000Z" },
+    },
+    storage,
+  );
+  let during: { phase: string; step: string | null } | null = null;
+  const session = new WeatherSession({
+    storage,
+    geolocation: geo.api,
+    now: () => new Date("2026-09-22T18:00:00.000Z"),
+    resolveLabel: async () => {
+      during = { phase: session.state.phase, step: session.state.locateStep };
+      return { ok: true, locationLabel: "Palo Alto, California", resolution: "ok" };
+    },
+    fetchWeather: async () => ({ ok: true, weather: { ...SF, locationLabel: FALLBACK_LOCATION_LABEL } }),
+  });
+  await session.requestDeviceLocation();
+  assert.deepEqual(during, { phase: "locating", step: "place" });
+  assert.equal(session.state.phase, "ready");
+  assert.equal(session.prefs.location.label, "Palo Alto, California");
+  assert.equal(session.prefs.location.labelState, "resolved");
+  assert.equal(session.placeNotice, null);
+  assert.equal(session.weather?.temperatureF, 72);
+  assert.doesNotMatch(storage.getItem(WEATHER_STORAGE_KEY) ?? "", /"resolution"/);
+  const settings = readFileSync(join(ROOT, "components/settings/WeatherSettings.tsx"), "utf8");
+  const today = readFileSync(join(ROOT, "components/today/TodayWeather.tsx"), "utf8");
+  assert.match(settings, /Finding place name…/);
+  assert.match(settings, /Getting location…/);
+  assert.match(today, /Finding place name…/);
+});
+
+async function explicitPlaceFailure(resolution: Exclude<LocationResolution, "ok">) {
+  const geo = fakeGeo({ ok: true, latitude: 37.4419, longitude: -122.143 });
+  const storage = new MemoryStorage();
+  writeWeatherPrefs(
+    {
+      v: 1,
+      units: "C",
+      location: {
+        mode: "coords",
+        lat: 37.44,
+        lon: -122.14,
+        label: FALLBACK_LOCATION_LABEL,
+        labelState: "fallback",
+        labelVersion: 2,
+      },
+      cache: { weather: { ...SF, locationLabel: FALLBACK_LOCATION_LABEL }, fetchedAt: "2026-09-22T17:50:00.000Z" },
+    },
+    storage,
+  );
+  let duringLocate = false;
+  const session = new WeatherSession({
+    storage,
+    geolocation: geo.api,
+    now: () => new Date("2026-09-22T18:00:00.000Z"),
+    resolveLabel: async () => {
+      duringLocate = session.state.phase === "locating" && session.state.locateStep === "place";
+      return { ok: false, resolution };
+    },
+    fetchWeather: async () => ({ ok: true, weather: { ...SF, locationLabel: FALLBACK_LOCATION_LABEL } }),
+  });
+  await session.requestDeviceLocation();
+  return { session, storage, duringLocate };
+}
+
+test("explicit place-name failures stay visible and out of saved prefs", async () => {
+  const resolutions = Object.keys(PLACE_RESOLUTION_MESSAGES) as Array<Exclude<LocationResolution, "ok">>;
+  for (const resolution of resolutions) {
+    const { session, storage, duringLocate } = await explicitPlaceFailure(resolution);
+    assert.equal(duringLocate, true, resolution);
+    assert.equal(session.placeNotice, PLACE_RESOLUTION_MESSAGES[resolution], resolution);
+    assert.equal(session.prefs.location.label, FALLBACK_LOCATION_LABEL, resolution);
+    assert.equal(session.prefs.location.labelState, "fallback", resolution);
+    assert.equal(session.prefs.location.labelVersion, 2, resolution);
+    assert.equal(session.state.phase, "ready", resolution);
+    assert.equal(session.weather?.condition, "Clear", resolution);
+    const raw = storage.getItem(WEATHER_STORAGE_KEY) ?? "";
+    assert.doesNotMatch(raw, /"resolution"/, resolution);
+    assert.doesNotMatch(raw, new RegExp(resolution), resolution);
+  }
+});
+
+test("automatic V2 migration consumes resolution without showing it", async () => {
+  const storage = new MemoryStorage();
+  writeWeatherPrefs(
+    {
+      v: 1,
+      units: "F",
+      location: {
+        mode: "coords",
+        lat: 37.4275,
+        lon: -122.1697,
+        label: "California",
+        labelState: "resolved",
+      },
+      cache: { weather: { ...SF, locationLabel: "California" }, fetchedAt: "2026-09-22T17:50:00.000Z" },
+    },
+    storage,
+  );
+  let lookups = 0;
+  const session = new WeatherSession({
+    storage,
+    now: () => new Date("2026-09-22T18:00:00.000Z"),
+    resolveLabel: async () => {
+      lookups += 1;
+      return { ok: false, resolution: "no_locality" };
+    },
+    fetchWeather: async () => {
+      throw new Error("fresh cache must not refetch weather during label migration");
+    },
+  });
+  await session.loadIfNeeded();
+  assert.equal(lookups, 1);
+  assert.equal(session.placeNotice, null);
+  assert.equal(session.locateStep, null);
+  assert.notEqual(session.state.phase, "locating");
+  assert.equal(session.prefs.location.label, FALLBACK_LOCATION_LABEL);
+  assert.equal(session.prefs.location.labelState, "fallback");
+  assert.equal(session.prefs.location.labelVersion, 2);
+  await session.loadIfNeeded();
+  assert.equal(lookups, 1);
+  assert.doesNotMatch(storage.getItem(WEATHER_STORAGE_KEY) ?? "", /"resolution"|no_locality/);
+});
+
+test("location client keeps only the closed resolution code", async () => {
+  const result = await fetchLocationLabelFromApi(37.44, -122.14, async () => {
+    return new Response(
+      JSON.stringify({
+        locationLabel: FALLBACK_LOCATION_LABEL,
+        resolution: "rate_limited",
+        error: "PROVIDER_BODY_SHOULD_NOT_LEAK",
+        display_name: "Campus Drive",
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  });
+  assert.deepEqual(result, { ok: false, resolution: "rate_limited" });
+  assert.doesNotMatch(JSON.stringify(result), /PROVIDER_BODY_SHOULD_NOT_LEAK|Campus Drive|37\.44/);
 });

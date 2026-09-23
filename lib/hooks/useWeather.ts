@@ -12,6 +12,8 @@ export type WeatherView = {
   weather: CurrentWeather | null;
   phase: WeatherPhase;
   error: string | null;
+  placeNotice: string | null;
+  locateStep: "position" | "place" | null;
   units: WeatherUnits;
   temperature: string | null;
   locationLabel: string | null;
@@ -99,6 +101,8 @@ export function useWeather(): WeatherView {
     weather,
     phase: snapshot.phase,
     error: snapshot.error,
+    placeNotice: snapshot.placeNotice,
+    locateStep: snapshot.locateStep,
     units,
     temperature: weather ? formatTemperature(weather, units) : null,
     locationLabel: configured

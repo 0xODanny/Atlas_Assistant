@@ -331,12 +331,120 @@ test("location API returns only a city label", async () => {
   }) as typeof fetch;
   const found = await handleLocationRequest(new Request("http://atlas.test/api/weather/location?lat=37.7749&lon=-122.4194"));
   assert.equal(found.status, 200);
-  assert.deepEqual(found.body, { locationLabel: "San Francisco, California" });
+  assert.deepEqual(found.body, { locationLabel: "San Francisco, California", resolution: "ok" });
 
   globalThis.fetch = (async () => jsonResponse({ error: true }, 503)) as typeof fetch;
   const failed = await handleLocationRequest(new Request("http://atlas.test/api/weather/location?lat=37.7749&lon=-122.4194"));
   assert.equal(failed.status, 200);
-  assert.deepEqual(failed.body, { locationLabel: FALLBACK_LOCATION_LABEL });
+  assert.deepEqual(failed.body, { locationLabel: FALLBACK_LOCATION_LABEL, resolution: "provider_error" });
+});
+
+test("location resolution distinguishes locality, provider, and timeout outcomes", async () => {
+  const secret = "PROVIDER_BODY_SHOULD_NOT_LEAK";
+  const cases: Array<{
+    name: string;
+    fetchImpl: typeof fetch;
+    resolution: string;
+    label: string;
+  }> = [
+    {
+      name: "locality",
+      fetchImpl: (async () =>
+        jsonResponse({
+          lat: "37.4275",
+          lon: "-122.1697",
+          display_name: secret,
+          address: { hamlet: "Stanford", state: "California", road: "Campus Drive", postcode: "94305" },
+        })) as typeof fetch,
+      resolution: "ok",
+      label: "Stanford, California",
+    },
+    {
+      name: "no locality",
+      fetchImpl: (async () =>
+        jsonResponse({
+          display_name: secret,
+          address: { county: "Santa Clara County", state: "California", road: "Campus Drive", postcode: "94305" },
+        })) as typeof fetch,
+      resolution: "no_locality",
+      label: FALLBACK_LOCATION_LABEL,
+    },
+    {
+      name: "rate limit",
+      fetchImpl: (async () => jsonResponse({ error: secret }, 429)) as typeof fetch,
+      resolution: "rate_limited",
+      label: FALLBACK_LOCATION_LABEL,
+    },
+    {
+      name: "forbidden",
+      fetchImpl: (async () => jsonResponse({ error: secret }, 403)) as typeof fetch,
+      resolution: "provider_error",
+      label: FALLBACK_LOCATION_LABEL,
+    },
+    {
+      name: "upstream",
+      fetchImpl: (async () => jsonResponse({ error: secret }, 502)) as typeof fetch,
+      resolution: "provider_error",
+      label: FALLBACK_LOCATION_LABEL,
+    },
+    {
+      name: "abort",
+      fetchImpl: (async () => {
+        throw new DOMException("The operation was aborted", "AbortError");
+      }) as typeof fetch,
+      resolution: "timeout",
+      label: FALLBACK_LOCATION_LABEL,
+    },
+    {
+      name: "malformed",
+      fetchImpl: (async () => new Response("<html>not json</html>", { status: 200 })) as typeof fetch,
+      resolution: "invalid_response",
+      label: FALLBACK_LOCATION_LABEL,
+    },
+    {
+      name: "unexpected shape",
+      fetchImpl: (async () => jsonResponse([{ error: secret, address: { city: "Palo Alto" } }])) as typeof fetch,
+      resolution: "invalid_response",
+      label: FALLBACK_LOCATION_LABEL,
+    },
+    {
+      name: "error object",
+      fetchImpl: (async () => jsonResponse({ error: secret })) as typeof fetch,
+      resolution: "invalid_response",
+      label: FALLBACK_LOCATION_LABEL,
+    },
+  ];
+
+  for (const item of cases) {
+    globalThis.fetch = item.fetchImpl;
+    const result = await handleLocationRequest(new Request("http://atlas.test/api/weather/location?lat=37.4275&lon=-122.1697"));
+    assert.equal(result.status, 200, item.name);
+    assert.deepEqual(result.body, { locationLabel: item.label, resolution: item.resolution }, item.name);
+    const encoded = JSON.stringify(result.body);
+    assert.deepEqual(Object.keys(result.body).sort(), ["locationLabel", "resolution"], item.name);
+    assert.doesNotMatch(encoded, /PROVIDER_BODY_SHOULD_NOT_LEAK|Campus Drive|94305|37\.4275|-122\.1697|display_name|<html/);
+  }
+});
+
+test("saved weather prefs drop a resolution field", () => {
+  const storage = new MemoryStorage();
+  const parsed = parseWeatherPrefs({
+    v: 1,
+    units: "F",
+    location: {
+      mode: "coords",
+      lat: 37.77,
+      lon: -122.42,
+      label: "Stanford, California",
+      labelState: "resolved",
+      labelVersion: 2,
+      resolution: "ok",
+    },
+  });
+  assert.equal("resolution" in parsed.location, false);
+  writeWeatherPrefs(parsed, storage);
+  const raw = storage.getItem(WEATHER_STORAGE_KEY) ?? "";
+  assert.doesNotMatch(raw, /resolution/);
 });
 
 test("weather refresh preserves a useful saved label", () => {

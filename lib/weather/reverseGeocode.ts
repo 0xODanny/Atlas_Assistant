@@ -1,4 +1,4 @@
-import { FALLBACK_LOCATION_LABEL, WEATHER_FETCH_TIMEOUT_MS } from "./types";
+import { FALLBACK_LOCATION_LABEL, WEATHER_FETCH_TIMEOUT_MS, type LocationResolution } from "./types";
 import { isValidLatitude, isValidLongitude } from "./service";
 import type { FetchLike } from "./openMeteo";
 
@@ -27,9 +27,16 @@ export type NominatimReversePayload = {
   name?: string;
 };
 
-export type ReverseGeocodeResult =
-  | { ok: true; locationLabel: string }
-  | { ok: false; locationLabel: typeof FALLBACK_LOCATION_LABEL };
+export type ReverseGeocodeResult = {
+  ok: boolean;
+  locationLabel: string;
+  resolution: LocationResolution;
+};
+
+export type LocationResponseBody = {
+  locationLabel: string;
+  resolution: LocationResolution;
+};
 
 const LOCALITY_FIELDS = ["city", "town", "village", "municipality", "borough", "locality", "hamlet"] as const;
 const REGION_FIELDS = ["state", "region"] as const;
@@ -83,13 +90,36 @@ export function nominatimReverseUrl(latitude: number, longitude: number): string
   return `${NOMINATIM_REVERSE_URL}?${params.toString()}`;
 }
 
+function unresolved(resolution: Exclude<LocationResolution, "ok">): ReverseGeocodeResult {
+  return { ok: false, locationLabel: FALLBACK_LOCATION_LABEL, resolution };
+}
+
+export function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = "name" in error ? String(error.name) : "";
+  if (name === "AbortError") return true;
+  const message = "message" in error ? String(error.message) : "";
+  return /aborted|timeout/i.test(message);
+}
+
+function isAddressRecord(value: unknown): value is NominatimAddress {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function nominatimPayloadFromJson(value: unknown): NominatimReversePayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const address = (value as { address?: unknown }).address;
+  if (!isAddressRecord(address)) return null;
+  return { address };
+}
+
 export async function reverseGeocodeCity(
   latitude: number,
   longitude: number,
   fetchFn?: FetchLike,
 ): Promise<ReverseGeocodeResult> {
   if (!isValidLatitude(latitude) || !isValidLongitude(longitude)) {
-    return { ok: false, locationLabel: FALLBACK_LOCATION_LABEL };
+    return unresolved("invalid_response");
   }
   const fetchImpl = fetchFn ?? fetch;
   const controller = new AbortController();
@@ -102,21 +132,33 @@ export async function reverseGeocodeCity(
         "User-Agent": NOMINATIM_USER_AGENT,
       },
     });
-    if (!response.ok) return { ok: false, locationLabel: FALLBACK_LOCATION_LABEL };
-    const payload = (await response.json()) as NominatimReversePayload;
-    const locationLabel = labelFromNominatim(payload);
-    if (locationLabel === FALLBACK_LOCATION_LABEL) {
-      return { ok: false, locationLabel: FALLBACK_LOCATION_LABEL };
+    if (response.status === 429) return unresolved("rate_limited");
+    if (!response.ok) return unresolved("provider_error");
+    let parsed: unknown;
+    try {
+      parsed = await response.json();
+    } catch {
+      return unresolved("invalid_response");
     }
-    return { ok: true, locationLabel };
-  } catch {
-    return { ok: false, locationLabel: FALLBACK_LOCATION_LABEL };
+    const payload = nominatimPayloadFromJson(parsed);
+    if (!payload) return unresolved("invalid_response");
+    const locationLabel = labelFromNominatim(payload);
+    if (locationLabel === FALLBACK_LOCATION_LABEL) return unresolved("no_locality");
+    return { ok: true, locationLabel, resolution: "ok" };
+  } catch (error) {
+    return unresolved(isAbortError(error) ? "timeout" : "provider_error");
   } finally {
     clearTimeout(timer);
   }
 }
 
-export async function handleLocationRequest(request: Request): Promise<{ status: number; body: unknown }> {
+export function locationResponseBody(result: ReverseGeocodeResult): LocationResponseBody {
+  return { locationLabel: result.locationLabel, resolution: result.resolution };
+}
+
+export async function handleLocationRequest(
+  request: Request,
+): Promise<{ status: number; body: LocationResponseBody | { error: string } }> {
   const params = new URL(request.url).searchParams;
   const latRaw = params.get("lat");
   const lonRaw = params.get("lon");
@@ -126,5 +168,5 @@ export async function handleLocationRequest(request: Request): Promise<{ status:
     return { status: 400, body: { error: "Enter a valid latitude and longitude." } };
   }
   const result = await reverseGeocodeCity(latitude, longitude);
-  return { status: 200, body: { locationLabel: result.locationLabel } };
+  return { status: 200, body: locationResponseBody(result) };
 }
