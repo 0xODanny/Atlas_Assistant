@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, test } from "node:test";
-import { celsiusToFahrenheit, conditionFromWmo, formatTemperature } from "../lib/weather/conditions";
+import { celsiusToFahrenheit, conditionFromWmo, formatCivilDay, formatCivilHour, formatTemperature, formatWindSpeed } from "../lib/weather/conditions";
+import { detailedForecastUrl, forecastUrl } from "../lib/weather/openMeteo";
+import { getWeatherForecast, handleForecastRequest, normalizeForecast } from "../lib/weather/forecast";
 import { handleWeatherRequest } from "../lib/weather/http";
 import {
   applyWeatherFailure,
@@ -484,4 +488,131 @@ test("weather refresh preserves a useful saved label", () => {
     false,
   );
   assert.equal(needsLabelRecovery({ mode: "manual", query: "Palo Alto", label: "Palo Alto, California" }), false);
+});
+
+function forecastHours() {
+  const times: string[] = [];
+  for (let index = 0; index < 12; index += 1) {
+    const hour = (22 + index) % 24;
+    const day = 22 + index >= 24 ? 24 : 23;
+    times.push(`2026-09-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:00`);
+  }
+  return times;
+}
+
+function providerForecast(timezone = "America/Los_Angeles") {
+  return {
+    timezone,
+    current: {
+      temperature_2m: 20,
+      apparent_temperature: 18,
+      weather_code: 2,
+      wind_speed_10m: 16,
+    },
+    hourly: {
+      time: forecastHours(),
+      temperature_2m: Array(12).fill(20),
+      weather_code: [0, 1, 2, 3, 45, 51, 61, 71, 80, 95, 2, 3],
+      precipitation_probability: [40, 10, 0, 5, 0, 20, 30, 0, 60, 80, 15, 5],
+    },
+    daily: {
+      time: ["2026-09-23", "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28", "2026-09-29"],
+      weather_code: [2, 61, 0, 3, 95, 71, 1],
+      temperature_2m_max: [22, 21, 20, 19, 18, 17, 16],
+      temperature_2m_min: [12, 11, 10, 9, 8, 7, 6],
+      precipitation_probability_max: [40, 50, 0, 10, 80, 20, 5],
+    },
+  };
+}
+
+test("forecast API accepts coordinates only and requests timezone=auto", async () => {
+  const current = new URL(forecastUrl(37.44, -122.14));
+  assert.equal(current.searchParams.get("current"), "temperature_2m,weather_code");
+  assert.equal(current.searchParams.get("hourly"), null);
+  assert.equal(current.searchParams.get("timezone"), null);
+
+  const detailed = new URL(detailedForecastUrl(37.44, -122.14));
+  assert.equal(detailed.searchParams.get("timezone"), "auto");
+  assert.equal(detailed.searchParams.get("forecast_hours"), "12");
+  assert.equal(detailed.searchParams.get("forecast_days"), "7");
+  assert.equal(detailed.searchParams.get("current"), "temperature_2m,apparent_temperature,weather_code,wind_speed_10m");
+  assert.equal(detailed.searchParams.get("hourly"), "temperature_2m,weather_code,precipitation_probability");
+  assert.equal(
+    detailed.searchParams.get("daily"),
+    "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+  );
+  assert.equal(detailed.searchParams.get("q"), null);
+  assert.doesNotMatch(detailed.hostname, /nominatim|geocoding/);
+
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    throw new Error("should not fetch");
+  }) as typeof fetch;
+  const cityOnly = await handleForecastRequest(new Request("http://localhost/api/weather/forecast?q=Paris"));
+  const invalid = await handleForecastRequest(new Request("http://localhost/api/weather/forecast?lat=200&lon=0"));
+  assert.equal(cityOnly.status, 400);
+  assert.equal(invalid.status, 400);
+  assert.equal(calls, 0);
+
+  const urls: string[] = [];
+  globalThis.fetch = (async (input) => {
+    urls.push(String(input));
+    return jsonResponse(providerForecast("Europe/Budapest"));
+  }) as typeof fetch;
+  const result = await handleForecastRequest(
+    new Request("http://localhost/api/weather/forecast?lat=47.4979&lon=19.0402&q=Paris"),
+  );
+  assert.equal(result.status, 200);
+  assert.equal(urls.length, 1);
+  assert.match(urls[0], /timezone=auto/);
+  assert.match(urls[0], /api\.open-meteo\.com\/v1\/forecast/);
+  assert.doesNotMatch(urls[0], /nominatim|geocoding|q=/);
+  assert.doesNotMatch(JSON.stringify(result.body), /temperature_2m|Paris|nominatim/);
+  const direct = await getWeatherForecast(47.4979, 19.0402, globalThis.fetch);
+  assert.equal(direct.ok, true);
+});
+
+test("forecast normalization keeps weather-local time and derived units", () => {
+  const forecast = normalizeForecast(providerForecast("America/Sao_Paulo"));
+  assert.ok(forecast);
+  assert.equal(forecast.timezone, "America/Sao_Paulo");
+  assert.equal(forecast.hourly.length, 12);
+  assert.equal(forecast.daily.length, 7);
+  assert.equal(forecast.current.temperatureC, 20);
+  assert.equal(forecast.current.temperatureF, celsiusToFahrenheit(20));
+  assert.equal(forecast.current.apparentTemperatureC, 18);
+  assert.equal(forecast.current.apparentTemperatureF, celsiusToFahrenheit(18));
+  assert.equal(forecast.current.windSpeedKmh, 16);
+  assert.equal(forecast.current.precipitationProbability, 40);
+  assert.equal(forecast.current.condition, "Partly cloudy");
+  assert.equal(forecast.hourly[0]?.condition, "Clear");
+  assert.equal(forecast.hourly[9]?.condition, "Thunderstorm");
+  assert.equal(forecast.hourly[1]?.time, "2026-09-23T23:00");
+  assert.equal(forecast.hourly[2]?.time, "2026-09-24T00:00");
+  assert.equal(formatCivilHour(forecast.hourly[1]?.time ?? ""), "11 PM");
+  assert.equal(formatCivilHour(forecast.hourly[2]?.time ?? ""), "12 AM");
+  assert.equal(forecast.daily[0]?.date, "2026-09-23");
+  assert.equal(forecast.daily[1]?.date, "2026-09-24");
+  assert.equal(formatCivilDay("2026-09-23"), "Wed 23");
+  assert.equal(formatCivilDay("2026-09-24"), "Thu 24");
+  assert.equal(formatTemperature(forecast.current, "C"), "20°C");
+  assert.equal(formatTemperature(forecast.current, "F"), "68°F");
+  assert.equal(formatTemperature({ temperatureC: 18, temperatureF: forecast.current.apparentTemperatureF }, "F"), "64°F");
+  assert.equal(formatWindSpeed(16, "C"), "16 km/h");
+  assert.equal(formatWindSpeed(16, "F"), "10 mph");
+  assert.equal(conditionFromWmo(95), "Thunderstorm");
+  assert.equal(normalizeForecast({ ...providerForecast(), hourly: { ...providerForecast().hourly, time: forecastHours().slice(0, 11) } }), null);
+  assert.equal(
+    normalizeForecast({
+      ...providerForecast(),
+      daily: { ...providerForecast().daily, time: providerForecast().daily.time.slice(0, 6) },
+    }),
+    null,
+  );
+  const conditions = readFileSync(join(process.cwd(), "lib/weather/conditions.ts"), "utf8");
+  const forecastSrc = readFileSync(join(process.cwd(), "lib/weather/forecast.ts"), "utf8");
+  assert.doesNotMatch(conditions, /America\/New_York/);
+  assert.doesNotMatch(forecastSrc, /America\/New_York|nominatim|geocoding-api|getCurrentPosition/);
+  assert.match(readFileSync(join(process.cwd(), "lib/weather/reverseGeocode.ts"), "utf8"), /NOMINATIM_ZOOM = 14/);
 });

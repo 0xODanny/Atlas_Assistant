@@ -1,12 +1,14 @@
 "use client";
 
-import Link from "next/link";
+import { useState } from "react";
 import { useWeather } from "@/lib/hooks/useWeather";
 import { OPEN_METEO_ATTRIBUTION_HREF, OPEN_METEO_ATTRIBUTION_LABEL } from "@/lib/weather/types";
 import { WeatherCityForm } from "../weather/WeatherCityForm";
+import { WeatherDetailSheet } from "../weather/WeatherDetailSheet";
 
 export function TodayWeather() {
   const weather = useWeather();
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   if (!weather.ready) {
     return <div className="today-weather" data-atlas-weather />;
@@ -62,12 +64,19 @@ export function TodayWeather() {
       ) : null}
 
       {weather.phase === "ready" && weather.weather && weather.temperature ? (
-        <Link href="/settings#weather" className="today-weather-ready">
+        <button
+          type="button"
+          className="today-weather-ready"
+          onClick={() => {
+            setSheetOpen(true);
+            void weather.loadForecast();
+          }}
+        >
           <p className="today-weather-line">
             {weather.temperature} · {weather.weather.condition}
           </p>
           <p className="today-weather-place">{weather.locationLabel}</p>
-        </Link>
+        </button>
       ) : null}
       {weather.placeNotice && weather.phase !== "locating" && weather.phase !== "city" ? (
         <p className="weather-status" role="status">
@@ -78,6 +87,15 @@ export function TodayWeather() {
       <a className="sr-only" href={OPEN_METEO_ATTRIBUTION_HREF}>
         {OPEN_METEO_ATTRIBUTION_LABEL}
       </a>
+      {sheetOpen && weather.phase === "ready" ? (
+        <WeatherDetailSheet
+          locationLabel={weather.locationLabel ?? "Current location"}
+          units={weather.units}
+          forecast={weather.forecast}
+          phase={weather.forecastPhase}
+          onClose={() => setSheetOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

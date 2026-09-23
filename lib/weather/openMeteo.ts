@@ -13,6 +13,29 @@ export type OpenMeteoCurrentPayload = {
   };
 };
 
+export type OpenMeteoForecastPayload = {
+  timezone?: string;
+  current?: {
+    temperature_2m?: number;
+    apparent_temperature?: number;
+    weather_code?: number;
+    wind_speed_10m?: number;
+  };
+  hourly?: {
+    time?: string[];
+    temperature_2m?: number[];
+    weather_code?: number[];
+    precipitation_probability?: Array<number | null>;
+  };
+  daily?: {
+    time?: string[];
+    weather_code?: number[];
+    temperature_2m_max?: number[];
+    temperature_2m_min?: number[];
+    precipitation_probability_max?: Array<number | null>;
+  };
+};
+
 export type OpenMeteoPlace = {
   name?: string;
   latitude?: number;
@@ -61,6 +84,20 @@ export function forecastUrl(latitude: number, longitude: number): string {
     latitude: String(latitude),
     longitude: String(longitude),
     current: "temperature_2m,weather_code",
+  });
+  return `${OPEN_METEO_FORECAST_URL}?${params.toString()}`;
+}
+
+export function detailedForecastUrl(latitude: number, longitude: number): string {
+  const params = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude),
+    current: "temperature_2m,apparent_temperature,weather_code,wind_speed_10m",
+    hourly: "temperature_2m,weather_code,precipitation_probability",
+    daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+    forecast_hours: "12",
+    forecast_days: "7",
+    timezone: "auto",
   });
   return `${OPEN_METEO_FORECAST_URL}?${params.toString()}`;
 }

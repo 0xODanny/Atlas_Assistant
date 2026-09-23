@@ -30,11 +30,55 @@ export type WeatherCache = {
   fetchedAt: string;
 };
 
+export type ForecastCurrent = {
+  temperatureC: number;
+  temperatureF: number;
+  apparentTemperatureC: number;
+  apparentTemperatureF: number;
+  condition: string;
+  weatherCode: number;
+  precipitationProbability: number | null;
+  windSpeedKmh: number;
+};
+
+export type ForecastHour = {
+  time: string;
+  temperatureC: number;
+  temperatureF: number;
+  condition: string;
+  weatherCode: number;
+  precipitationProbability: number | null;
+};
+
+export type ForecastDay = {
+  date: string;
+  condition: string;
+  weatherCode: number;
+  highC: number;
+  highF: number;
+  lowC: number;
+  lowF: number;
+  precipitationProbability: number | null;
+};
+
+export type WeatherForecast = {
+  timezone: string;
+  current: ForecastCurrent;
+  hourly: ForecastHour[];
+  daily: ForecastDay[];
+};
+
+export type WeatherForecastCache = {
+  forecast: WeatherForecast;
+  fetchedAt: string;
+};
+
 export type WeatherPrefs = {
   v: 1;
   units: WeatherUnits;
   location: WeatherLocation;
   cache?: WeatherCache;
+  forecast?: WeatherForecastCache;
 };
 
 export type WeatherQuery =
@@ -79,6 +123,8 @@ export type GeoResult =
 
 export const WEATHER_STORAGE_KEY = "atlas.weather.v1";
 export const WEATHER_CACHE_MS = 12 * 60 * 1000;
+export const WEATHER_FORECAST_CACHE_MS = 30 * 60 * 1000;
+export const FORECAST_UNAVAILABLE = "Forecast is unavailable right now.";
 export const WEATHER_FETCH_TIMEOUT_MS = 8_000;
 export const WEATHER_MAX_QUERY_LENGTH = 80;
 export const OPEN_METEO_ATTRIBUTION_HREF = "https://open-meteo.com/";

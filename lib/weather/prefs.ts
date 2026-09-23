@@ -1,7 +1,9 @@
+import { parseWeatherForecast } from "./forecast";
 import { isValidLatitude, isValidLongitude } from "./service";
 import type {
   CurrentWeather,
   WeatherCache,
+  WeatherForecastCache,
   WeatherLabelState,
   WeatherLocation,
   WeatherPrefs,
@@ -87,6 +89,15 @@ export function parseWeatherCache(raw: unknown): WeatherCache | undefined {
   return { weather, fetchedAt };
 }
 
+export function parseForecastCache(raw: unknown): WeatherForecastCache | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const value = raw as Record<string, unknown>;
+  const forecast = parseWeatherForecast(value.forecast);
+  const fetchedAt = typeof value.fetchedAt === "string" ? value.fetchedAt : "";
+  if (!forecast || !fetchedAt || !Number.isFinite(Date.parse(fetchedAt))) return undefined;
+  return { forecast, fetchedAt };
+}
+
 export function parseWeatherPrefs(raw: unknown): WeatherPrefs {
   if (!raw || typeof raw !== "object") return { ...DEFAULT_WEATHER_PREFS };
   const value = raw as Record<string, unknown>;
@@ -96,6 +107,7 @@ export function parseWeatherPrefs(raw: unknown): WeatherPrefs {
     units: isWeatherUnits(value.units) ? value.units : "F",
     location: parseWeatherLocation(value.location),
     cache: parseWeatherCache(value.cache),
+    forecast: parseForecastCache(value.forecast),
   };
 }
 
@@ -202,6 +214,17 @@ export function applyWeatherSuccess(prefs: WeatherPrefs, weather: CurrentWeather
       weather: { ...weather, locationLabel: label },
       fetchedAt: now.toISOString(),
     },
+  });
+}
+
+export function applyForecastSuccess(
+  prefs: WeatherPrefs,
+  forecast: WeatherForecastCache["forecast"],
+  now: Date,
+): WeatherPrefs {
+  return parseWeatherPrefs({
+    ...prefs,
+    forecast: { forecast, fetchedAt: now.toISOString() },
   });
 }
 

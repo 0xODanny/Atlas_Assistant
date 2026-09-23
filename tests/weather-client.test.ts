@@ -6,8 +6,10 @@ import { currentCapabilities, capabilityCopy } from "../lib/assistant/capabiliti
 import { fulfillIntent } from "../lib/assistant/fulfill";
 import { createSeedState } from "../lib/data/seed";
 import { GEOLOCATION_OPTIONS, requestDevicePosition } from "../lib/weather/geolocation";
+import { normalizeForecast } from "../lib/weather/forecast";
+import { formatTemperature, formatWindSpeed } from "../lib/weather/conditions";
 import { readWeatherPrefs, writeWeatherPrefs } from "../lib/weather/prefs";
-import { fetchLocationLabelFromApi, PLACE_RESOLUTION_MESSAGES, WeatherSession } from "../lib/weather/session";
+import { fetchForecastFromApi, fetchLocationLabelFromApi, PLACE_RESOLUTION_MESSAGES, WeatherSession } from "../lib/weather/session";
 import type { LocationResolution } from "../lib/weather/types";
 import {
   FALLBACK_LOCATION_LABEL,
@@ -554,11 +556,16 @@ test("Today and Settings keep weather compact, labeled, and attributed", () => {
     "lib/weather/reverseGeocode.ts",
     "app/api/weather/route.ts",
     "app/api/weather/location/route.ts",
+    "lib/weather/forecast.ts",
+    "app/api/weather/forecast/route.ts",
   ].map((file) => readFileSync(join(ROOT, file), "utf8"));
 
   assert.match(todayView, /<TodayWeather \/>/);
   assert.match(todayView, /data-atlas-greeting[\s\S]*<TodayWeather \/>[\s\S]*subtitle/);
-  assert.match(today, /settings#weather/);
+  assert.match(today, /loadForecast\(\)/);
+  assert.match(today, /setSheetOpen\(true\)/);
+  assert.doesNotMatch(today, /href="\/settings#weather"/);
+  assert.match(readFileSync(join(ROOT, "components/weather/WeatherDetailSheet.tsx"), "utf8"), /\/settings#weather/);
   assert.doesNotMatch(today, /getCurrentPosition/);
   assert.match(today, /aria-live="polite"/);
   assert.match(settings, /aria-pressed=\{weather\.units === "F"\}/);
@@ -747,4 +754,225 @@ test("location client keeps only the closed resolution code", async () => {
   });
   assert.deepEqual(result, { ok: false, resolution: "rate_limited" });
   assert.doesNotMatch(JSON.stringify(result), /PROVIDER_BODY_SHOULD_NOT_LEAK|Campus Drive|37\.44/);
+});
+
+function sampleForecast(timezone = "America/Los_Angeles") {
+  const times = Array.from({ length: 12 }, (_, index) => {
+    const hour = (22 + index) % 24;
+    const day = 22 + index >= 24 ? 24 : 23;
+    return `2026-09-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:00`;
+  });
+  const forecast = normalizeForecast({
+    timezone,
+    current: { temperature_2m: 20, apparent_temperature: 18, weather_code: 0, wind_speed_10m: 16 },
+    hourly: {
+      time: times,
+      temperature_2m: Array(12).fill(20),
+      weather_code: Array(12).fill(0),
+      precipitation_probability: [35, ...Array(11).fill(0)],
+    },
+    daily: {
+      time: ["2026-09-23", "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28", "2026-09-29"],
+      weather_code: Array(7).fill(1),
+      temperature_2m_max: Array(7).fill(22),
+      temperature_2m_min: Array(7).fill(12),
+      precipitation_probability_max: Array(7).fill(10),
+    },
+  });
+  if (!forecast) throw new Error("sample forecast failed");
+  return forecast;
+}
+
+function readyPrefs(forecastFetchedAt: string, forecast = sampleForecast()) {
+  return {
+    v: 1 as const,
+    units: "F" as const,
+    location: {
+      mode: "coords" as const,
+      lat: 37.4419,
+      lon: -122.143,
+      label: FALLBACK_LOCATION_LABEL,
+      labelState: "fallback" as const,
+      labelVersion: 2,
+    },
+    cache: {
+      weather: { ...SF, locationLabel: FALLBACK_LOCATION_LABEL },
+      fetchedAt: "2026-09-23T18:00:00.000Z",
+    },
+    forecast: { forecast, fetchedAt: forecastFetchedAt },
+  };
+}
+
+test("forecast cache renders fresh data and preserves weather when refresh fails", async () => {
+  const now = new Date("2026-09-23T18:00:00.000Z");
+  let forecastCalls = 0;
+  const fresh = new WeatherSession({
+    storage: new MemoryStorage(),
+    prefs: readyPrefs(now.toISOString()),
+    now: () => now,
+    fetchForecast: async () => {
+      forecastCalls += 1;
+      throw new Error("fresh forecast should not fetch");
+    },
+    geolocation: { getCurrentPosition() { throw new Error("geo"); } },
+    resolveLabel: async () => { throw new Error("label"); },
+  });
+  await fresh.loadForecast();
+  assert.equal(forecastCalls, 0);
+  assert.equal(fresh.forecastPhase, "ready");
+  assert.equal(fresh.prefs.location.label, "Current location");
+
+  let release: (value: { ok: false; message: string }) => void = () => {};
+  const gate = new Promise<{ ok: false; message: string }>((resolve) => {
+    release = resolve;
+  });
+  const staleAt = new Date(now.getTime() - 31 * 60 * 1000).toISOString();
+  const stale = new WeatherSession({
+    storage: new MemoryStorage(),
+    prefs: readyPrefs(staleAt),
+    now: () => now,
+    fetchForecast: async () => {
+      forecastCalls += 1;
+      return gate;
+    },
+    fetchWeather: async () => { throw new Error("current weather"); },
+  });
+  const pending = stale.loadForecast();
+  assert.equal(stale.forecastPhase, "refreshing");
+  assert.equal(stale.prefs.forecast?.forecast.timezone, "America/Los_Angeles");
+  assert.equal(stale.weather?.temperatureF, 72);
+  release({ ok: false, message: "Forecast is unavailable right now." });
+  await pending;
+  assert.equal(stale.forecastPhase, "ready");
+  assert.equal(stale.prefs.forecast?.forecast.current.temperatureC, 20);
+  assert.equal(stale.weather?.condition, "Clear");
+  assert.equal(stale.prefs.location.label, "Current location");
+
+  const missing = new WeatherSession({
+    storage: new MemoryStorage(),
+    prefs: { ...readyPrefs(now.toISOString()), forecast: undefined },
+    now: () => now,
+    fetchForecast: async () => ({ ok: false, message: "Forecast is unavailable right now." }),
+  });
+  let sawLoading = false;
+  const original = missing.onChange;
+  missing.onChange = () => {
+    if (missing.forecastPhase === "loading") sawLoading = true;
+    original?.();
+  };
+  await missing.loadForecast();
+  assert.equal(sawLoading, true);
+  assert.equal(missing.forecastPhase, "unavailable");
+  assert.equal(missing.prefs.forecast, undefined);
+  assert.equal(missing.weather?.temperatureF, 72);
+  assert.equal(missing.prefs.units, "F");
+});
+
+test("unit switch and forecast open stay on saved coordinates", async () => {
+  const now = new Date("2026-09-23T18:00:00.000Z");
+  let forecastCalls = 0;
+  let weatherCalls = 0;
+  let labelCalls = 0;
+  const geo = fakeGeo({ ok: true, latitude: 1, longitude: 2 });
+  const seen: Array<{ lat: number; lon: number }> = [];
+  const session = new WeatherSession({
+    storage: new MemoryStorage(),
+    prefs: {
+      ...readyPrefs(new Date(now.getTime() - 31 * 60 * 1000).toISOString()),
+      units: "F",
+      location: {
+        mode: "manual",
+        query: "Palo Alto",
+        lat: 37.4419,
+        lon: -122.143,
+        label: "Palo Alto, California",
+        labelVersion: 2,
+      },
+    },
+    now: () => now,
+    geolocation: geo.api,
+    fetchWeather: async () => {
+      weatherCalls += 1;
+      throw new Error("should not geocode");
+    },
+    resolveLabel: async () => {
+      labelCalls += 1;
+      throw new Error("should not reverse");
+    },
+    fetchForecast: async (lat, lon) => {
+      forecastCalls += 1;
+      seen.push({ lat, lon });
+      return { ok: true, forecast: sampleForecast("America/Sao_Paulo") };
+    },
+  });
+  const forecast = session.prefs.forecast?.forecast;
+  assert.ok(forecast);
+  assert.equal(formatTemperature(forecast.current, "F"), "68°F");
+  assert.equal(formatWindSpeed(forecast.current.windSpeedKmh, "F"), "10 mph");
+  session.setUnits("C");
+  assert.equal(session.prefs.units, "C");
+  assert.equal(forecastCalls, 0);
+  assert.equal(geo.calls(), 0);
+  assert.equal(formatTemperature(forecast.current, session.prefs.units), "20°C");
+  assert.equal(formatWindSpeed(forecast.current.windSpeedKmh, session.prefs.units), "16 km/h");
+  const first = session.loadForecast();
+  const second = session.loadForecast();
+  await first;
+  await second;
+  assert.equal(forecastCalls, 1);
+  assert.deepEqual(seen, [{ lat: 37.4419, lon: -122.143 }]);
+  assert.equal(weatherCalls, 0);
+  assert.equal(labelCalls, 0);
+  assert.equal(geo.calls(), 0);
+  assert.equal(session.prefs.forecast?.forecast.timezone, "America/Sao_Paulo");
+  assert.equal(session.weather?.temperatureF, 72);
+  await session.loadForecast();
+  assert.equal(forecastCalls, 1);
+
+  const url = await fetchForecastFromApi(37.4419, -122.143, async (input) => {
+    assert.match(String(input), /^\/api\/weather\/forecast\?lat=37\.4419&lon=-122\.143$/);
+    assert.doesNotMatch(String(input), /q=|nominatim|geocoding|location/);
+    return new Response(JSON.stringify(sampleForecast()), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  assert.equal(url.ok, true);
+});
+
+test("Today forecast sheet stays local and coordinates-only", () => {
+  const today = readFileSync(join(ROOT, "components/today/TodayWeather.tsx"), "utf8");
+  const sheet = readFileSync(join(ROOT, "components/weather/WeatherDetailSheet.tsx"), "utf8");
+  const icon = readFileSync(join(ROOT, "components/weather/WeatherIcon.tsx"), "utf8");
+  const session = readFileSync(join(ROOT, "lib/weather/session.ts"), "utf8");
+  const css = readFileSync(join(ROOT, "app/globals.css"), "utf8");
+  const provider = readFileSync(join(ROOT, "lib/state/provider.tsx"), "utf8");
+  const forecastRoute = readFileSync(join(ROOT, "app/api/weather/forecast/route.ts"), "utf8");
+  const loadForecast = session.slice(session.indexOf("async loadForecast"), session.indexOf("async requestDeviceLocation"));
+  assert.match(today, /WeatherDetailSheet/);
+  assert.match(today, /locationLabel=\{weather\.locationLabel/);
+  assert.match(sheet, /title=\{locationLabel\}/);
+  assert.match(sheet, /Next 12 hours/);
+  assert.match(sheet, /7 days/);
+  assert.match(sheet, /Feels like/);
+  assert.match(sheet, /Forecast is unavailable right now|FORECAST_UNAVAILABLE/);
+  assert.match(sheet, /Loading forecast/);
+  assert.match(sheet, /href="\/settings#weather"/);
+  assert.match(sheet, /OPEN_METEO_ATTRIBUTION_LABEL/);
+  assert.doesNotMatch(sheet, /getCurrentPosition|nominatim|geocoding|no_locality|Couldn't determine the city/);
+  assert.doesNotMatch(icon, /lucide|react-icons|day|night/);
+  assert.match(icon, /<svg/);
+  assert.doesNotMatch(loadForecast, /requestDevicePosition|resolveLabel|geocode|\/api\/weather\/location|queryFromPrefs/);
+  assert.match(loadForecast, /fetchForecast\(/);
+  assert.doesNotMatch(forecastRoute, /nominatim|geocoding/);
+  assert.doesNotMatch(provider, /weather:/);
+  assert.match(css, /\.atlas-sheet-panel \{[^}]*max-height: 100%/);
+  assert.match(css, /\.atlas-sheet-panel \{[^}]*min-height: 0/);
+  assert.match(css, /padding-top: calc\(12px \+ var\(--atlas-safe-top\)\)/);
+  assert.match(css, /max-width: 28rem/);
+  assert.match(css, /\.atlas-sheet-scroll \{[^}]*min-height: 0/);
+  assert.match(css, /\.atlas-sheet-scroll \{[^}]*overflow-y: auto/);
+  for (const file of ["EventSheet.tsx", "MoveSheet.tsx", "PrepareSheet.tsx", "ConfirmDeleteSheet.tsx"]) {
+    assert.match(readFileSync(join(ROOT, "components/sheets", file), "utf8"), /import \{ Sheet \} from "\.\/Sheet"/);
+  }
+  assert.match(readFileSync(join(ROOT, "lib/assistant/capabilities.ts"), "utf8"), /id: "weather", available: false/);
+  assert.match(readFileSync(join(ROOT, "lib/weather/reverseGeocode.ts"), "utf8"), /NOMINATIM_ZOOM = 14/);
+  assert.match(session, /Couldn't determine the city for this location\./);
 });

@@ -1,12 +1,15 @@
+import { parseWeatherForecast } from "./forecast";
 import { requestDevicePosition, type DeviceGeolocation } from "./geolocation";
 import { isAbortError } from "./reverseGeocode";
 import {
+  applyForecastSuccess,
   applyLabelResolution,
   applyWeatherFailure,
   applyWeatherSuccess,
   clearWeatherLocation,
   hasConfiguredLocation,
   isUsefulLocationLabel,
+  isWeatherCacheFresh,
   needsLabelRecovery,
   parseCurrentWeather,
   readWeatherPrefs,
@@ -15,16 +18,18 @@ import {
   writeWeatherPrefs,
   type WeatherStorage,
 } from "./prefs";
+import { isValidLatitude, isValidLongitude } from "./service";
 import type {
   CurrentWeather,
   GeoFailureReason,
   LocationResolution,
+  WeatherForecast,
   WeatherPrefs,
   WeatherQuery,
   WeatherResult,
   WeatherUnits,
 } from "./types";
-import { LOCATION_LABEL_VERSION } from "./types";
+import { FORECAST_UNAVAILABLE, LOCATION_LABEL_VERSION, WEATHER_FORECAST_CACHE_MS } from "./types";
 
 export type WeatherPhase = "unconfigured" | "locating" | "city" | "loading" | "ready" | "error";
 
@@ -52,6 +57,14 @@ export function placeResolutionMessage(resolution: LocationLabelFailure): string
   return PLACE_RESOLUTION_MESSAGES[resolution];
 }
 
+export type ForecastPhase = "idle" | "loading" | "refreshing" | "ready" | "unavailable";
+
+export type ForecastClientResult =
+  | { ok: true; forecast: WeatherForecast }
+  | { ok: false; message: string };
+
+export type ForecastClientFetch = (latitude: number, longitude: number) => Promise<ForecastClientResult>;
+
 export type WeatherSessionState = {
   prefs: WeatherPrefs;
   phase: WeatherPhase;
@@ -59,6 +72,7 @@ export type WeatherSessionState = {
   geoRequests: number;
   placeNotice: string | null;
   locateStep: LocateStep;
+  forecastPhase: ForecastPhase;
 };
 
 function queryFromPrefs(prefs: WeatherPrefs): WeatherQuery | null {
@@ -82,6 +96,15 @@ function phaseFor(prefs: WeatherPrefs, overlay: WeatherPhase | null, error: stri
   return "unconfigured";
 }
 
+function savedForecastCoordinates(prefs: WeatherPrefs): { latitude: number; longitude: number } | null {
+  const { location } = prefs;
+  if (location.mode !== "coords" && location.mode !== "manual") return null;
+  const latitude = Number(location.lat);
+  const longitude = Number(location.lon);
+  if (!isValidLatitude(latitude) || !isValidLongitude(longitude)) return null;
+  return { latitude, longitude };
+}
+
 export class WeatherSession {
   prefs: WeatherPrefs;
   error: string | null = null;
@@ -89,11 +112,14 @@ export class WeatherSession {
   locateStep: LocateStep = null;
   geoRequests = 0;
   labelLookups = 0;
+  forecastPhase: ForecastPhase = "idle";
   private locationRequestId = 0;
   private labelLookupInFlight = false;
+  private forecastFlight: Promise<WeatherSessionState> | null = null;
   private overlay: WeatherPhase | null = null;
   private readonly storage: WeatherStorage | null;
   private readonly fetchWeather: WeatherClientFetch;
+  private readonly fetchForecast: ForecastClientFetch;
   private readonly resolveLabel: LocationLabelFetch;
   private readonly geolocation: DeviceGeolocation | null | undefined;
   private readonly now: () => Date;
@@ -102,6 +128,7 @@ export class WeatherSession {
   constructor(options: {
     storage?: WeatherStorage | null;
     fetchWeather?: WeatherClientFetch;
+    fetchForecast?: ForecastClientFetch;
     resolveLabel?: LocationLabelFetch;
     geolocation?: DeviceGeolocation | null;
     now?: () => Date;
@@ -110,6 +137,7 @@ export class WeatherSession {
   } = {}) {
     this.storage = options.storage ?? (typeof window === "undefined" ? null : window.localStorage);
     this.fetchWeather = options.fetchWeather ?? fetchWeatherFromApi;
+    this.fetchForecast = options.fetchForecast ?? fetchForecastFromApi;
     this.resolveLabel = options.resolveLabel ?? fetchLocationLabelFromApi;
     this.geolocation = options.geolocation;
     this.now = options.now ?? (() => new Date());
@@ -129,6 +157,7 @@ export class WeatherSession {
       geoRequests: this.geoRequests,
       placeNotice: this.placeNotice,
       locateStep: this.locateStep,
+      forecastPhase: this.forecastPhase,
     };
   }
 
@@ -177,6 +206,45 @@ export class WeatherSession {
     this.error = result.message;
     this.overlay = this.weather ? null : "error";
     return this.commit(applyWeatherFailure(this.prefs));
+  }
+
+  async loadForecast() {
+    if (this.forecastFlight) return this.forecastFlight;
+    this.forecastFlight = this.runForecastLoad();
+    try {
+      return await this.forecastFlight;
+    } finally {
+      this.forecastFlight = null;
+    }
+  }
+
+  private async runForecastLoad() {
+    const coords = savedForecastCoordinates(this.prefs);
+    if (!coords) {
+      this.forecastPhase = this.prefs.forecast ? "ready" : "unavailable";
+      this.notify();
+      return this.state;
+    }
+    const cached = this.prefs.forecast;
+    if (cached && isWeatherCacheFresh(cached.fetchedAt, this.now(), WEATHER_FORECAST_CACHE_MS)) {
+      this.forecastPhase = "ready";
+      this.notify();
+      return this.state;
+    }
+    const hadCache = Boolean(cached);
+    this.forecastPhase = hadCache ? "refreshing" : "loading";
+    this.notify();
+    const result = await this.fetchForecast(coords.latitude, coords.longitude);
+    if (result.ok) {
+      const forecast = parseWeatherForecast(result.forecast);
+      if (forecast) {
+        this.forecastPhase = "ready";
+        return this.commit(applyForecastSuccess(this.prefs, forecast, this.now()));
+      }
+    }
+    this.forecastPhase = hadCache ? "ready" : "unavailable";
+    this.notify();
+    return this.state;
   }
 
   async requestDeviceLocation() {
@@ -331,6 +399,26 @@ export async function fetchLocationLabelFromApi(
     return { ok: false, resolution: "invalid_response" };
   } catch (error) {
     return { ok: false, resolution: isAbortError(error) ? "timeout" : "provider_error" };
+  }
+}
+
+export async function fetchForecastFromApi(
+  latitude: number,
+  longitude: number,
+  fetchFn: typeof fetch = fetch,
+): Promise<ForecastClientResult> {
+  const url = `/api/weather/forecast?lat=${encodeURIComponent(String(latitude))}&lon=${encodeURIComponent(String(longitude))}`;
+  try {
+    const response = await fetchFn(url, { headers: { Accept: "application/json" } });
+    const payload = (await response.json()) as { error?: string };
+    if (!response.ok) {
+      return { ok: false, message: typeof payload.error === "string" ? payload.error : FORECAST_UNAVAILABLE };
+    }
+    const forecast = parseWeatherForecast(payload);
+    if (!forecast) return { ok: false, message: FORECAST_UNAVAILABLE };
+    return { ok: true, forecast };
+  } catch {
+    return { ok: false, message: FORECAST_UNAVAILABLE };
   }
 }
 

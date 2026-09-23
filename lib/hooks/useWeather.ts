@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatTemperature } from "../weather/conditions";
 import { hasConfiguredLocation, preferLocationLabel } from "../weather/prefs";
-import { WeatherSession, type WeatherPhase } from "../weather/session";
-import type { CurrentWeather, WeatherPrefs, WeatherUnits } from "../weather/types";
+import { WeatherSession, type ForecastPhase, type WeatherPhase } from "../weather/session";
+import type { CurrentWeather, WeatherForecast, WeatherPrefs, WeatherUnits } from "../weather/types";
 
 export type WeatherView = {
   ready: boolean;
@@ -18,6 +18,9 @@ export type WeatherView = {
   temperature: string | null;
   locationLabel: string | null;
   configured: boolean;
+  forecast: WeatherForecast | null;
+  forecastPhase: ForecastPhase;
+  loadForecast: () => Promise<void>;
   requestDeviceLocation: () => Promise<void>;
   beginCityEntry: () => void;
   cancelCityEntry: () => void;
@@ -91,6 +94,11 @@ export function useWeather(): WeatherView {
     sync();
   }, [sync]);
 
+  const loadForecast = useCallback(async () => {
+    await sessionRef.current?.loadForecast();
+    sync();
+  }, [sync]);
+
   const weather = snapshot.prefs.cache?.weather ?? null;
   const units = snapshot.prefs.units;
   const configured = hasConfiguredLocation(snapshot.prefs.location);
@@ -116,5 +124,8 @@ export function useWeather(): WeatherView {
     setUnits,
     clearLocation,
     refresh,
+    forecast: snapshot.prefs.forecast?.forecast ?? null,
+    forecastPhase: snapshot.forecastPhase,
+    loadForecast,
   };
 }

@@ -42,3 +42,24 @@ export function formatTemperature(weather: { temperatureC: number; temperatureF:
   const value = units === "C" ? Math.round(weather.temperatureC) : Math.round(weather.temperatureF);
   return `${value}°${units}`;
 }
+
+export function formatWindSpeed(windSpeedKmh: number, units: "F" | "C"): string {
+  if (units === "F") return `${Math.round(windSpeedKmh * 0.621371)} mph`;
+  return `${Math.round(windSpeedKmh)} km/h`;
+}
+
+export function formatCivilHour(time: string): string {
+  const hour = Number(time.slice(11, 13));
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23 || time.charAt(10) !== "T") return time;
+  const suffix = hour < 12 ? "AM" : "PM";
+  const hour12 = hour % 12 || 12;
+  return `${hour12} ${suffix}`;
+}
+
+export function formatCivilDay(date: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return date;
+  const utc = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "UTC" }).format(utc);
+  return `${weekday} ${Number(match[3])}`;
+}
