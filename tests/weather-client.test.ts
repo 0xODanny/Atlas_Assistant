@@ -9,8 +9,11 @@ import { GEOLOCATION_OPTIONS, requestDevicePosition } from "../lib/weather/geolo
 import { readWeatherPrefs, writeWeatherPrefs } from "../lib/weather/prefs";
 import { WeatherSession } from "../lib/weather/session";
 import {
+  FALLBACK_LOCATION_LABEL,
   OPEN_METEO_ATTRIBUTION_HREF,
   OPEN_METEO_ATTRIBUTION_LABEL,
+  OSM_ATTRIBUTION_HREF,
+  OSM_ATTRIBUTION_LABEL,
   WEATHER_STORAGE_KEY,
   type CurrentWeather,
 } from "../lib/weather/types";
@@ -91,21 +94,26 @@ test("geolocation success saves coordinates and weather", async () => {
     storage,
     geolocation: geo.api,
     now: () => new Date("2026-09-22T18:00:00.000Z"),
+    resolveLabel: async () => ({ ok: true, locationLabel: "San Francisco, California" }),
     fetchWeather: async (query) => {
       assert.equal(query.kind, "coords");
       if (query.kind !== "coords") throw new Error("expected coords");
       assert.equal(query.latitude, 37.7749);
       assert.equal(query.longitude, -122.4194);
-      return { ok: true, weather: SF };
+      return { ok: true, weather: { ...SF, locationLabel: FALLBACK_LOCATION_LABEL } };
     },
   });
   await session.requestDeviceLocation();
   assert.equal(session.geoRequests, 1);
+  assert.equal(session.labelLookups, 1);
   assert.equal(geo.calls(), 1);
   assert.equal(session.state.phase, "ready");
   assert.equal(session.prefs.location.mode, "coords");
   assert.equal(session.prefs.location.lat, 37.7749);
+  assert.equal(session.prefs.location.label, "San Francisco, California");
+  assert.equal(session.prefs.location.labelState, "resolved");
   assert.equal(session.weather?.condition, "Clear");
+  assert.equal(session.weather?.locationLabel, "San Francisco, California");
   assert.equal(readWeatherPrefs(storage).location.mode, "coords");
 });
 
@@ -159,7 +167,13 @@ test("saved coordinates reuse without another permission request", async () => {
     {
       v: 1,
       units: "F",
-      location: { mode: "coords", lat: 37.7749, lon: -122.4194, label: "San Francisco, California" },
+      location: {
+        mode: "coords",
+        lat: 37.7749,
+        lon: -122.4194,
+        label: "San Francisco, California",
+        labelState: "resolved",
+      },
     },
     storage,
   );
@@ -168,6 +182,9 @@ test("saved coordinates reuse without another permission request", async () => {
     storage,
     geolocation: geo.api,
     now: () => new Date("2026-09-22T18:00:00.000Z"),
+    resolveLabel: async () => {
+      throw new Error("saved coordinates must not reverse-geocode");
+    },
     fetchWeather: async (query) => {
       fetches += 1;
       assert.equal(query.kind, "coords");
@@ -182,7 +199,185 @@ test("saved coordinates reuse without another permission request", async () => {
   assert.equal(session.geoRequests, 0);
   assert.equal(geo.calls(), 0);
   assert.equal(fetches, 1);
+  assert.equal(session.labelLookups, 0);
   assert.equal(session.state.phase, "ready");
+});
+
+test("normal weather refresh does not reverse-geocode", async () => {
+  const storage = new MemoryStorage();
+  writeWeatherPrefs(
+    {
+      v: 1,
+      units: "F",
+      location: {
+        mode: "coords",
+        lat: 37.7749,
+        lon: -122.4194,
+        label: "San Francisco, California",
+        labelState: "resolved",
+      },
+      cache: { weather: SF, fetchedAt: "2026-09-22T17:00:00.000Z" },
+    },
+    storage,
+  );
+  const session = new WeatherSession({
+    storage,
+    now: () => new Date("2026-09-22T18:00:00.000Z"),
+    resolveLabel: async () => {
+      throw new Error("stale weather refresh must not reverse-geocode");
+    },
+    fetchWeather: async () => ({ ok: true, weather: { ...SF, locationLabel: FALLBACK_LOCATION_LABEL } }),
+  });
+  await session.loadIfNeeded();
+  assert.equal(session.labelLookups, 0);
+  assert.equal(session.prefs.location.label, "San Francisco, California");
+});
+
+test("fresh cached weather does not reverse-geocode", async () => {
+  const storage = new MemoryStorage();
+  writeWeatherPrefs(
+    {
+      v: 1,
+      units: "F",
+      location: {
+        mode: "coords",
+        lat: 37.7749,
+        lon: -122.4194,
+        label: "San Francisco, California",
+        labelState: "resolved",
+      },
+      cache: { weather: SF, fetchedAt: "2026-09-22T17:50:00.000Z" },
+    },
+    storage,
+  );
+  const session = new WeatherSession({
+    storage,
+    now: () => new Date("2026-09-22T18:00:00.000Z"),
+    resolveLabel: async () => {
+      throw new Error("fresh cache must not reverse-geocode");
+    },
+    fetchWeather: async () => {
+      throw new Error("fresh cache must not fetch weather");
+    },
+  });
+  await session.loadIfNeeded();
+  assert.equal(session.labelLookups, 0);
+  assert.equal(session.state.phase, "ready");
+});
+
+test("existing Current location recovers once", async () => {
+  const storage = new MemoryStorage();
+  writeWeatherPrefs(
+    {
+      v: 1,
+      units: "F",
+      location: { mode: "coords", lat: 37.7749, lon: -122.4194, label: FALLBACK_LOCATION_LABEL },
+      cache: { weather: { ...SF, locationLabel: FALLBACK_LOCATION_LABEL }, fetchedAt: "2026-09-22T17:50:00.000Z" },
+    },
+    storage,
+  );
+  let lookups = 0;
+  const session = new WeatherSession({
+    storage,
+    now: () => new Date("2026-09-22T18:00:00.000Z"),
+    resolveLabel: async () => {
+      lookups += 1;
+      return { ok: true, locationLabel: "San Francisco, California" };
+    },
+    fetchWeather: async () => {
+      throw new Error("fresh recovered weather should not refetch");
+    },
+  });
+  await session.loadIfNeeded();
+  assert.equal(lookups, 1);
+  assert.equal(session.prefs.location.label, "San Francisco, California");
+  assert.equal(session.prefs.location.labelState, "resolved");
+  assert.equal(session.weather?.locationLabel, "San Francisco, California");
+  await session.loadIfNeeded();
+  assert.equal(lookups, 1);
+  assert.equal(readWeatherPrefs(storage).location.label, "San Francisco, California");
+});
+
+test("failed label recovery does not loop", async () => {
+  const storage = new MemoryStorage();
+  writeWeatherPrefs(
+    {
+      v: 1,
+      units: "F",
+      location: { mode: "coords", lat: 37.7749, lon: -122.4194, label: FALLBACK_LOCATION_LABEL },
+    },
+    storage,
+  );
+  let lookups = 0;
+  const session = new WeatherSession({
+    storage,
+    now: () => new Date("2026-09-22T18:00:00.000Z"),
+    resolveLabel: async () => {
+      lookups += 1;
+      return { ok: false };
+    },
+    fetchWeather: async () => ({ ok: true, weather: { ...SF, locationLabel: FALLBACK_LOCATION_LABEL } }),
+  });
+  await session.loadIfNeeded();
+  assert.equal(lookups, 1);
+  assert.equal(session.prefs.location.label, FALLBACK_LOCATION_LABEL);
+  assert.equal(session.prefs.location.labelState, "fallback");
+  await session.loadIfNeeded();
+  assert.equal(lookups, 1);
+});
+
+test("explicit Use my location can resolve a label again", async () => {
+  const geo = fakeGeo({ ok: true, latitude: 47.4979, longitude: 19.0402 });
+  const storage = new MemoryStorage();
+  writeWeatherPrefs(
+    {
+      v: 1,
+      units: "F",
+      location: {
+        mode: "coords",
+        lat: 37.77,
+        lon: -122.42,
+        label: FALLBACK_LOCATION_LABEL,
+        labelState: "fallback",
+      },
+    },
+    storage,
+  );
+  let lookups = 0;
+  const session = new WeatherSession({
+    storage,
+    geolocation: geo.api,
+    now: () => new Date("2026-09-22T18:00:00.000Z"),
+    resolveLabel: async () => {
+      lookups += 1;
+      return { ok: true, locationLabel: "Budapest, Budapest" };
+    },
+    fetchWeather: async () => ({ ok: true, weather: { ...SF, locationLabel: FALLBACK_LOCATION_LABEL } }),
+  });
+  await session.loadIfNeeded();
+  assert.equal(lookups, 0);
+  await session.requestDeviceLocation();
+  assert.equal(lookups, 1);
+  assert.equal(session.prefs.location.label, "Budapest, Budapest");
+  assert.equal(session.prefs.location.labelState, "resolved");
+});
+
+test("manual city remains Open-Meteo only", async () => {
+  const session = new WeatherSession({
+    storage: new MemoryStorage(),
+    now: () => new Date("2026-09-22T18:00:00.000Z"),
+    resolveLabel: async () => {
+      throw new Error("manual city must not use Nominatim");
+    },
+    fetchWeather: async (query) => {
+      assert.equal(query.kind, "city");
+      return { ok: true, weather: { ...SF, locationLabel: "Budapest, Budapest", latitude: 47.5, longitude: 19.04 } };
+    },
+  });
+  await session.submitCity("Budapest");
+  assert.equal(session.labelLookups, 0);
+  assert.equal(session.prefs.location.query, "Budapest");
+  assert.equal(session.prefs.location.label, "Budapest, Budapest");
 });
 
 test("unit preference persists independently of location", () => {
@@ -241,7 +436,9 @@ test("Today and Settings keep weather compact, labeled, and attributed", () => {
     "lib/weather/openMeteo.ts",
     "lib/weather/http.ts",
     "lib/weather/session.ts",
+    "lib/weather/reverseGeocode.ts",
     "app/api/weather/route.ts",
+    "app/api/weather/location/route.ts",
   ].map((file) => readFileSync(join(ROOT, file), "utf8"));
 
   assert.match(todayView, /<TodayWeather \/>/);
@@ -255,6 +452,8 @@ test("Today and Settings keep weather compact, labeled, and attributed", () => {
   assert.match(types, /https:\/\/open-meteo.com\//);
   assert.match(settings, /OPEN_METEO_ATTRIBUTION_LABEL/);
   assert.match(settings, /OPEN_METEO_ATTRIBUTION_HREF/);
+  assert.match(settings, /OSM_ATTRIBUTION_LABEL/);
+  assert.match(settings, /OSM_ATTRIBUTION_HREF/);
   assert.match(settings, /Not configured/);
   assert.match(settings, /Clear weather location/);
   assert.match(form, /htmlFor=\{id\}/);
@@ -269,4 +468,14 @@ test("Today and Settings keep weather compact, labeled, and attributed", () => {
   assert.equal(WEATHER_STORAGE_KEY, "atlas.weather.v1");
   assert.equal(OPEN_METEO_ATTRIBUTION_LABEL, "Weather data by Open-Meteo.com");
   assert.equal(OPEN_METEO_ATTRIBUTION_HREF, "https://open-meteo.com/");
+  assert.equal(OSM_ATTRIBUTION_LABEL, "© OpenStreetMap contributors");
+  assert.equal(OSM_ATTRIBUTION_HREF, "https://www.openstreetmap.org/copyright");
+  const openMeteo = readFileSync(join(ROOT, "lib/weather/openMeteo.ts"), "utf8");
+  const weatherApi = readFileSync(join(ROOT, "lib/weather/service.ts"), "utf8");
+  const weatherRoute = readFileSync(join(ROOT, "app/api/weather/route.ts"), "utf8");
+  assert.doesNotMatch(openMeteo, /\/v1\/reverse/);
+  assert.doesNotMatch(weatherApi, /nominatim|reverseGeocode/);
+  assert.doesNotMatch(weatherRoute, /nominatim|location/);
+  assert.match(readFileSync(join(ROOT, "lib/weather/reverseGeocode.ts"), "utf8"), /nominatim\.openstreetmap\.org\/reverse/);
+  assert.match(readFileSync(join(ROOT, "lib/weather/reverseGeocode.ts"), "utf8"), /User-Agent/);
 });

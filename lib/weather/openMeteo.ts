@@ -2,7 +2,6 @@ import { WEATHER_FETCH_TIMEOUT_MS } from "./types";
 
 export const OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
 export const OPEN_METEO_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search";
-export const OPEN_METEO_REVERSE_URL = "https://geocoding-api.open-meteo.com/v1/reverse";
 
 export type OpenMeteoCurrentPayload = {
   latitude?: number;
@@ -74,16 +73,6 @@ export function geocodeUrl(query: string): string {
     format: "json",
   });
   return `${OPEN_METEO_GEOCODE_URL}?${params.toString()}`;
-}
-
-export function reverseGeocodeUrl(latitude: number, longitude: number): string {
-  const params = new URLSearchParams({
-    latitude: String(latitude),
-    longitude: String(longitude),
-    language: "en",
-    format: "json",
-  });
-  return `${OPEN_METEO_REVERSE_URL}?${params.toString()}`;
 }
 
 export function placeLabel(place: OpenMeteoPlace | undefined, fallback: string): string {

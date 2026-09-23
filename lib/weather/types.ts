@@ -13,12 +13,15 @@ export type CurrentWeather = {
   observedAt: string;
 };
 
+export type WeatherLabelState = "resolved" | "fallback";
+
 export type WeatherLocation = {
   mode: WeatherLocationMode;
   label?: string;
   query?: string;
   lat?: number;
   lon?: number;
+  labelState?: WeatherLabelState;
 };
 
 export type WeatherCache = {
@@ -71,3 +74,6 @@ export const WEATHER_FETCH_TIMEOUT_MS = 8_000;
 export const WEATHER_MAX_QUERY_LENGTH = 80;
 export const OPEN_METEO_ATTRIBUTION_HREF = "https://open-meteo.com/";
 export const OPEN_METEO_ATTRIBUTION_LABEL = "Weather data by Open-Meteo.com";
+export const OSM_ATTRIBUTION_HREF = "https://www.openstreetmap.org/copyright";
+export const OSM_ATTRIBUTION_LABEL = "© OpenStreetMap contributors";
+export const FALLBACK_LOCATION_LABEL = "Current location";

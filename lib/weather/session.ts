@@ -4,7 +4,10 @@ import {
   applyWeatherSuccess,
   clearWeatherLocation,
   hasConfiguredLocation,
+  isUsefulLocationLabel,
+  needsLabelRecovery,
   parseCurrentWeather,
+  preferLocationLabel,
   readWeatherPrefs,
   shouldFetchWeather,
   withUnits,
@@ -16,6 +19,10 @@ import type { CurrentWeather, GeoFailureReason, WeatherPrefs, WeatherQuery, Weat
 export type WeatherPhase = "unconfigured" | "locating" | "city" | "loading" | "ready" | "error";
 
 export type WeatherClientFetch = (query: WeatherQuery) => Promise<WeatherResult>;
+
+export type LocationLabelResult = { ok: true; locationLabel: string } | { ok: false };
+
+export type LocationLabelFetch = (latitude: number, longitude: number) => Promise<LocationLabelResult>;
 
 export type WeatherSessionState = {
   prefs: WeatherPrefs;
@@ -49,10 +56,13 @@ export class WeatherSession {
   prefs: WeatherPrefs;
   error: string | null = null;
   geoRequests = 0;
+  labelLookups = 0;
   private locationRequestId = 0;
+  private labelLookupInFlight = false;
   private overlay: WeatherPhase | null = null;
   private readonly storage: WeatherStorage | null;
   private readonly fetchWeather: WeatherClientFetch;
+  private readonly resolveLabel: LocationLabelFetch;
   private readonly geolocation: DeviceGeolocation | null | undefined;
   private readonly now: () => Date;
   onChange: (() => void) | null = null;
@@ -60,6 +70,7 @@ export class WeatherSession {
   constructor(options: {
     storage?: WeatherStorage | null;
     fetchWeather?: WeatherClientFetch;
+    resolveLabel?: LocationLabelFetch;
     geolocation?: DeviceGeolocation | null;
     now?: () => Date;
     prefs?: WeatherPrefs;
@@ -67,6 +78,7 @@ export class WeatherSession {
   } = {}) {
     this.storage = options.storage ?? (typeof window === "undefined" ? null : window.localStorage);
     this.fetchWeather = options.fetchWeather ?? fetchWeatherFromApi;
+    this.resolveLabel = options.resolveLabel ?? fetchLocationLabelFromApi;
     this.geolocation = options.geolocation;
     this.now = options.now ?? (() => new Date());
     this.prefs = options.prefs ?? readWeatherPrefs(this.storage);
@@ -96,7 +108,36 @@ export class WeatherSession {
     return this.state;
   }
 
+  async recoverLabelIfNeeded() {
+    if (!needsLabelRecovery(this.prefs.location) || this.labelLookupInFlight) return this.state;
+    const lat = Number(this.prefs.location.lat);
+    const lon = Number(this.prefs.location.lon);
+    this.labelLookupInFlight = true;
+    this.labelLookups += 1;
+    try {
+      const resolved = await this.resolveLabel(lat, lon);
+      const incoming = resolved.ok ? resolved.locationLabel : undefined;
+      const label = preferLocationLabel(this.prefs.location.label, incoming);
+      const cache = this.prefs.cache
+        ? { ...this.prefs.cache, weather: { ...this.prefs.cache.weather, locationLabel: label } }
+        : this.prefs.cache;
+      this.commit({
+        ...this.prefs,
+        location: {
+          ...this.prefs.location,
+          label,
+          labelState: isUsefulLocationLabel(label) ? "resolved" : "fallback",
+        },
+        cache,
+      });
+    } finally {
+      this.labelLookupInFlight = false;
+    }
+    return this.state;
+  }
+
   async loadIfNeeded() {
+    await this.recoverLabelIfNeeded();
     if (!shouldFetchWeather(this.prefs, this.now())) return this.state;
     return this.refresh();
   }
@@ -133,13 +174,19 @@ export class WeatherSession {
       return this.state;
     }
     this.overlay = this.weather ? null : "loading";
+    this.labelLookups += 1;
+    const resolved = await this.resolveLabel(position.latitude, position.longitude);
+    if (requestId !== this.locationRequestId) return this.state;
+    const incoming = resolved.ok ? resolved.locationLabel : undefined;
+    const label = preferLocationLabel(this.prefs.location.label, incoming);
     this.commit({
       ...this.prefs,
       location: {
         mode: "coords",
         lat: position.latitude,
         lon: position.longitude,
-        label: this.prefs.location.label,
+        label,
+        labelState: isUsefulLocationLabel(label) ? "resolved" : "fallback",
       },
     });
     return this.refresh();
@@ -181,6 +228,7 @@ export class WeatherSession {
             label: result.weather.locationLabel,
             lat: result.weather.latitude,
             lon: result.weather.longitude,
+            labelState: isUsefulLocationLabel(result.weather.locationLabel) ? "resolved" : undefined,
           },
         },
         result.weather,
@@ -206,6 +254,24 @@ export function geoErrorMessage(reason: GeoFailureReason): string {
   if (reason === "timeout") return "Location timed out.";
   if (reason === "unsupported") return "This device cannot share location.";
   return "Location is unavailable.";
+}
+
+export async function fetchLocationLabelFromApi(
+  latitude: number,
+  longitude: number,
+  fetchFn: typeof fetch = fetch,
+): Promise<LocationLabelResult> {
+  try {
+    const response = await fetchFn(
+      `/api/weather/location?lat=${encodeURIComponent(String(latitude))}&lon=${encodeURIComponent(String(longitude))}`,
+      { headers: { Accept: "application/json" } },
+    );
+    const payload = (await response.json()) as { locationLabel?: string };
+    if (!response.ok || !isUsefulLocationLabel(payload.locationLabel)) return { ok: false };
+    return { ok: true, locationLabel: payload.locationLabel!.trim() };
+  } catch {
+    return { ok: false };
+  }
 }
 
 export async function fetchWeatherFromApi(query: WeatherQuery, fetchFn: typeof fetch = fetch): Promise<WeatherResult> {

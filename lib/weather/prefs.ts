@@ -1,6 +1,13 @@
 import { isValidLatitude, isValidLongitude } from "./service";
-import type { CurrentWeather, WeatherCache, WeatherLocation, WeatherPrefs, WeatherUnits } from "./types";
-import { WEATHER_CACHE_MS, WEATHER_STORAGE_KEY } from "./types";
+import type {
+  CurrentWeather,
+  WeatherCache,
+  WeatherLabelState,
+  WeatherLocation,
+  WeatherPrefs,
+  WeatherUnits,
+} from "./types";
+import { FALLBACK_LOCATION_LABEL, WEATHER_CACHE_MS, WEATHER_STORAGE_KEY } from "./types";
 
 export type WeatherStorage = {
   getItem(key: string): string | null;
@@ -56,12 +63,15 @@ export function parseWeatherLocation(raw: unknown): WeatherLocation {
   const hasCoords = isValidLatitude(lat) && isValidLongitude(lon);
   if (mode === "coords" && !hasCoords) return { mode: "unset" };
   if (mode === "manual" && !query && !hasCoords) return { mode: "unset" };
+  const labelState: WeatherLabelState | undefined =
+    value.labelState === "resolved" || value.labelState === "fallback" ? value.labelState : undefined;
   return {
     mode,
     label,
     query,
     lat: hasCoords ? lat : undefined,
     lon: hasCoords ? lon : undefined,
+    labelState,
   };
 }
 
@@ -133,17 +143,36 @@ export function shouldFetchWeather(prefs: WeatherPrefs, now: Date, ttlMs = WEATH
   return !isWeatherCacheFresh(prefs.cache?.fetchedAt, now, ttlMs);
 }
 
+export function isUsefulLocationLabel(label?: string): boolean {
+  const value = label?.trim();
+  return Boolean(value) && value !== FALLBACK_LOCATION_LABEL;
+}
+
+export function preferLocationLabel(existing?: string, incoming?: string): string {
+  if (isUsefulLocationLabel(existing) && !isUsefulLocationLabel(incoming)) return existing!.trim();
+  if (isUsefulLocationLabel(incoming)) return incoming!.trim();
+  return existing?.trim() || FALLBACK_LOCATION_LABEL;
+}
+
+export function needsLabelRecovery(location: WeatherLocation): boolean {
+  if (location.mode !== "coords") return false;
+  if (!isValidLatitude(Number(location.lat)) || !isValidLongitude(Number(location.lon))) return false;
+  if (location.labelState === "resolved" || location.labelState === "fallback") return false;
+  return !isUsefulLocationLabel(location.label);
+}
+
 export function applyWeatherSuccess(prefs: WeatherPrefs, weather: CurrentWeather, now: Date): WeatherPrefs {
+  const label = preferLocationLabel(prefs.location.label, weather.locationLabel);
   return parseWeatherPrefs({
     ...prefs,
     location: {
       ...prefs.location,
-      label: weather.locationLabel,
-      lat: weather.latitude,
-      lon: weather.longitude,
+      label,
+      lat: prefs.location.lat ?? weather.latitude,
+      lon: prefs.location.lon ?? weather.longitude,
     },
     cache: {
-      weather,
+      weather: { ...weather, locationLabel: label },
       fetchedAt: now.toISOString(),
     },
   });

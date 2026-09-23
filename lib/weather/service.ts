@@ -4,13 +4,12 @@ import {
   forecastUrl,
   geocodeUrl,
   placeLabel,
-  reverseGeocodeUrl,
   type FetchLike,
   type OpenMeteoCurrentPayload,
   type OpenMeteoGeocodePayload,
 } from "./openMeteo";
 import type { CurrentWeather, WeatherFailure, WeatherQuery, WeatherResult } from "./types";
-import { WEATHER_MAX_QUERY_LENGTH } from "./types";
+import { FALLBACK_LOCATION_LABEL, WEATHER_MAX_QUERY_LENGTH } from "./types";
 
 export function isValidLatitude(value: number): boolean {
   return Number.isFinite(value) && value >= -90 && value <= 90;
@@ -112,17 +111,6 @@ function normalizeCurrent(
   };
 }
 
-export async function resolvePlaceLabel(
-  latitude: number,
-  longitude: number,
-  fetchFn?: FetchLike,
-  fallback = "Current location",
-): Promise<string> {
-  const result = await fetchJsonWithTimeout<OpenMeteoGeocodePayload>(reverseGeocodeUrl(latitude, longitude), { fetchFn });
-  if (!result.ok) return fallback;
-  return placeLabel(result.data.results?.[0], fallback);
-}
-
 export async function getCurrentWeather(
   query: WeatherQuery,
   fetchFn?: FetchLike,
@@ -156,16 +144,16 @@ export async function getCurrentWeather(
   if (!isValidLatitude(query.latitude) || !isValidLongitude(query.longitude)) {
     return fail("invalid_coordinates", "Enter a valid latitude and longitude.", 400);
   }
-  const [forecast, label] = await Promise.all([
-    fetchJsonWithTimeout<OpenMeteoCurrentPayload>(forecastUrl(query.latitude, query.longitude), { fetchFn }),
-    resolvePlaceLabel(query.latitude, query.longitude, fetchFn),
-  ]);
+  const forecast = await fetchJsonWithTimeout<OpenMeteoCurrentPayload>(
+    forecastUrl(query.latitude, query.longitude),
+    { fetchFn },
+  );
   if (!forecast.ok) {
     return forecast.reason === "timeout"
       ? fail("timeout", "Weather is taking too long. Try again.", 504)
       : fail("upstream", "Weather is unavailable right now.", 502);
   }
-  const weather = normalizeCurrent(forecast.data, label, query.latitude, query.longitude);
+  const weather = normalizeCurrent(forecast.data, FALLBACK_LOCATION_LABEL, query.latitude, query.longitude);
   if (!weather) return fail("upstream", "Weather is unavailable right now.", 502);
   return { ok: true, weather };
 }

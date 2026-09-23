@@ -1,7 +1,12 @@
 "use client";
 
 import { useWeather } from "@/lib/hooks/useWeather";
-import { OPEN_METEO_ATTRIBUTION_HREF, OPEN_METEO_ATTRIBUTION_LABEL } from "@/lib/weather/types";
+import {
+  OPEN_METEO_ATTRIBUTION_HREF,
+  OPEN_METEO_ATTRIBUTION_LABEL,
+  OSM_ATTRIBUTION_HREF,
+  OSM_ATTRIBUTION_LABEL,
+} from "@/lib/weather/types";
 import { SettingRow } from "../ui/SettingRow";
 import { WeatherCityForm } from "../weather/WeatherCityForm";
 
@@ -65,6 +70,10 @@ export function WeatherSettings() {
       <p className="setting-note weather-attribution">
         <a href={OPEN_METEO_ATTRIBUTION_HREF} rel="noreferrer">
           {OPEN_METEO_ATTRIBUTION_LABEL}
+        </a>
+        {" · "}
+        <a href={OSM_ATTRIBUTION_HREF} rel="noreferrer">
+          {OSM_ATTRIBUTION_LABEL}
         </a>
       </p>
     </section>

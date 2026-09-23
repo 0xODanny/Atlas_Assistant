@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatTemperature } from "../weather/conditions";
-import { hasConfiguredLocation } from "../weather/prefs";
+import { hasConfiguredLocation, preferLocationLabel } from "../weather/prefs";
 import { WeatherSession, type WeatherPhase } from "../weather/session";
 import type { CurrentWeather, WeatherPrefs, WeatherUnits } from "../weather/types";
 
@@ -91,6 +91,7 @@ export function useWeather(): WeatherView {
 
   const weather = snapshot.prefs.cache?.weather ?? null;
   const units = snapshot.prefs.units;
+  const configured = hasConfiguredLocation(snapshot.prefs.location);
 
   return {
     ready,
@@ -100,8 +101,10 @@ export function useWeather(): WeatherView {
     error: snapshot.error,
     units,
     temperature: weather ? formatTemperature(weather, units) : null,
-    locationLabel: weather?.locationLabel ?? snapshot.prefs.location.label ?? null,
-    configured: hasConfiguredLocation(snapshot.prefs.location),
+    locationLabel: configured
+      ? preferLocationLabel(snapshot.prefs.location.label, weather?.locationLabel)
+      : null,
+    configured,
     requestDeviceLocation,
     beginCityEntry,
     cancelCityEntry,

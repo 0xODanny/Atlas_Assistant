@@ -6,14 +6,23 @@ import {
   applyWeatherFailure,
   applyWeatherSuccess,
   DEFAULT_WEATHER_PREFS,
+  isUsefulLocationLabel,
   isWeatherCacheFresh,
+  needsLabelRecovery,
   parseWeatherPrefs,
+  preferLocationLabel,
   readWeatherPrefs,
   shouldFetchWeather,
   writeWeatherPrefs,
 } from "../lib/weather/prefs";
+import { handleLocationRequest, labelFromNominatim } from "../lib/weather/reverseGeocode";
 import { getCurrentWeather, parseWeatherSearchParams } from "../lib/weather/service";
-import { WEATHER_CACHE_MS, WEATHER_STORAGE_KEY, type CurrentWeather } from "../lib/weather/types";
+import {
+  FALLBACK_LOCATION_LABEL,
+  WEATHER_CACHE_MS,
+  WEATHER_STORAGE_KEY,
+  type CurrentWeather,
+} from "../lib/weather/types";
 
 const originalFetch = globalThis.fetch;
 
@@ -65,12 +74,8 @@ function openMeteoFetch(options: {
         },
       );
     }
-    if (url.includes("geocoding-api.open-meteo.com/v1/reverse")) {
-      return jsonResponse(
-        options.reverse ?? {
-          results: [{ name: "San Francisco", admin1: "California", latitude: 37.7749, longitude: -122.4194 }],
-        },
-      );
+    if (url.includes("nominatim.openstreetmap.org") || url.includes("geocoding-api.open-meteo.com/v1/reverse")) {
+      throw new Error(`weather fetch must not reverse-geocode: ${url}`);
     }
     if (url.includes("api.open-meteo.com/v1/forecast")) {
       return jsonResponse(
@@ -92,7 +97,7 @@ test("valid coordinates return normalized current weather", async () => {
   );
   assert.equal(result.ok, true);
   if (!result.ok) return;
-  assert.equal(result.weather.locationLabel, "San Francisco, California");
+  assert.equal(result.weather.locationLabel, FALLBACK_LOCATION_LABEL);
   assert.equal(result.weather.condition, "Clear");
   assert.equal(result.weather.temperatureC, 22.2);
   assert.equal(result.weather.temperatureF, 72);
@@ -252,4 +257,95 @@ test("a failed refresh keeps a usable cached result", () => {
   const afterFailure = applyWeatherFailure(prefs);
   assert.equal(afterFailure.cache?.weather.condition, "Clear");
   assert.equal(afterFailure.cache?.weather.temperatureF, 72);
+});
+
+test("weather from coordinates succeeds when reverse geocoding is unavailable", async () => {
+  const result = await getCurrentWeather(
+    { kind: "coords", latitude: 47.4979, longitude: 19.0402 },
+    async (input) => {
+      const url = String(input);
+      assert.doesNotMatch(url, /nominatim|\/v1\/reverse/);
+      return openMeteoFetch({})(input);
+    },
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.weather.condition, "Clear");
+  assert.equal(result.weather.locationLabel, FALLBACK_LOCATION_LABEL);
+});
+
+test("Nominatim locality fields normalize to city-level labels", () => {
+  assert.equal(
+    labelFromNominatim({ address: { city: "San Francisco", state: "California", road: "Market St", postcode: "94103" } }),
+    "San Francisco, California",
+  );
+  assert.equal(
+    labelFromNominatim({ address: { city: "São Paulo", state: "São Paulo", house_number: "100" } }),
+    "São Paulo, São Paulo",
+  );
+  assert.equal(labelFromNominatim({ address: { city: "Budapest", state: "Budapest" } }), "Budapest, Budapest");
+  assert.equal(labelFromNominatim({ address: { town: "Bath", state: "England" } }), "Bath, England");
+  assert.equal(labelFromNominatim({ address: { village: "Giverny", region: "Normandy" } }), "Giverny, Normandy");
+  assert.equal(labelFromNominatim({ address: { municipality: "Reykjavík" } }), "Reykjavík");
+  assert.equal(labelFromNominatim({ address: { borough: "Brooklyn", state: "New York" } }), "Brooklyn, New York");
+  assert.equal(labelFromNominatim({ address: { locality: "Ipanema", state: "Rio de Janeiro" } }), "Ipanema, Rio de Janeiro");
+  assert.doesNotMatch(
+    labelFromNominatim({ address: { city: "San Francisco", state: "California", road: "Market St", postcode: "94103" } }),
+    /Market|94103/,
+  );
+  assert.equal(labelFromNominatim({ address: { road: "Market St", postcode: "94103" } }), FALLBACK_LOCATION_LABEL);
+});
+
+test("location API returns only a city label", async () => {
+  globalThis.fetch = (async (input) => {
+    const url = String(input);
+    assert.match(url, /nominatim\.openstreetmap\.org\/reverse/);
+    assert.match(url, /zoom=10/);
+    return jsonResponse({ address: { city: "San Francisco", state: "California" } });
+  }) as typeof fetch;
+  const found = await handleLocationRequest(new Request("http://atlas.test/api/weather/location?lat=37.7749&lon=-122.4194"));
+  assert.equal(found.status, 200);
+  assert.deepEqual(found.body, { locationLabel: "San Francisco, California" });
+
+  globalThis.fetch = (async () => jsonResponse({ error: true }, 503)) as typeof fetch;
+  const failed = await handleLocationRequest(new Request("http://atlas.test/api/weather/location?lat=37.7749&lon=-122.4194"));
+  assert.equal(failed.status, 200);
+  assert.deepEqual(failed.body, { locationLabel: FALLBACK_LOCATION_LABEL });
+});
+
+test("weather refresh preserves a useful saved label", () => {
+  const now = new Date("2026-09-22T18:00:00.000Z");
+  const next = applyWeatherSuccess(
+    {
+      v: 1,
+      units: "F",
+      location: {
+        mode: "coords",
+        lat: 37.7749,
+        lon: -122.4194,
+        label: "San Francisco, California",
+        labelState: "resolved",
+      },
+    },
+    { ...SF, locationLabel: FALLBACK_LOCATION_LABEL },
+    now,
+  );
+  assert.equal(next.location.label, "San Francisco, California");
+  assert.equal(next.cache?.weather.locationLabel, "San Francisco, California");
+  assert.equal(preferLocationLabel("San Francisco, California", FALLBACK_LOCATION_LABEL), "San Francisco, California");
+  assert.equal(isUsefulLocationLabel(FALLBACK_LOCATION_LABEL), false);
+  assert.equal(
+    needsLabelRecovery({ mode: "coords", lat: 37.77, lon: -122.42, label: FALLBACK_LOCATION_LABEL }),
+    true,
+  );
+  assert.equal(
+    needsLabelRecovery({
+      mode: "coords",
+      lat: 37.77,
+      lon: -122.42,
+      label: FALLBACK_LOCATION_LABEL,
+      labelState: "fallback",
+    }),
+    false,
+  );
 });
