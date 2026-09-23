@@ -16,6 +16,7 @@ import type { PrivacyLevel } from "@/lib/types/event";
 import { SettingRow } from "../ui/SettingRow";
 import { ConnectionRow } from "./ConnectionRow";
 import { GoogleCalendarSettings } from "./GoogleCalendarSettings";
+import { WeatherSettings } from "./WeatherSettings";
 
 const TIMEZONES = [
   "America/New_York",
@@ -33,6 +34,12 @@ export function SettingsView() {
   const profile = state.profile;
   const sampleOn = sampleDataEnabled(profile, state.connections);
   const [openaiStatus, setOpenaiStatus] = useState<"connected" | "not_configured">("not_configured");
+
+  useEffect(() => {
+    if (window.location.hash === "#weather") {
+      document.getElementById("weather")?.scrollIntoView({ block: "start" });
+    }
+  }, []);
 
   useEffect(() => {
     void fetch("/api/assistant")
@@ -165,6 +172,8 @@ export function SettingsView() {
           }
         />
       </section>
+
+      <WeatherSettings />
 
       <section className="settings-section">
         <h2 className="settings-heading">Training</h2>

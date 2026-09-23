@@ -20,6 +20,7 @@ import { eventDetailHref } from "@/lib/navigation/back";
 import { EmptyState, InlineStatus } from "../ui/EmptyState";
 import { TodayComposer } from "./TodayComposer";
 import { TodayTimeline } from "./TodayTimeline";
+import { TodayWeather } from "./TodayWeather";
 
 export function TodayView() {
   const { ready, state, openSheet, refreshGoogle, googleSyncing } = useAppState();
@@ -65,6 +66,7 @@ export function TodayView() {
       <h1 className="display-title mt-3" data-atlas-greeting>
         {greetingEditorial(now.toISOString(), profile.timezone, profile.displayName)}
       </h1>
+      <TodayWeather />
       <p className="body-copy mt-3 max-w-md">{subtitle}</p>
       <Link href="/brief" className="brief-row mt-6">
         <span>Morning brief</span>

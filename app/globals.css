@@ -614,6 +614,115 @@ textarea {
   padding-top: 2.75rem;
 }
 
+.today-weather {
+  margin-top: 0.7rem;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.today-weather-ready {
+  color: inherit;
+  display: block;
+  max-width: 100%;
+  min-height: 44px;
+  text-decoration: none;
+}
+
+.today-weather-line {
+  color: var(--atlas-muted);
+  font-size: 16px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.today-weather-place {
+  color: var(--atlas-meta);
+  font-size: 14px;
+  line-height: 1.35;
+  margin-top: 0.1rem;
+  overflow-wrap: anywhere;
+}
+
+.today-weather-add {
+  background: transparent;
+  border: 0;
+  color: var(--atlas-muted);
+  font-size: 16px;
+  min-height: 44px;
+  padding: 0;
+  text-align: left;
+}
+
+.today-weather-setup {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.weather-status {
+  color: var(--atlas-meta);
+  font-size: 14px;
+  line-height: 1.4;
+  margin: 0 0 0.35rem;
+}
+
+.weather-city-form {
+  max-width: 100%;
+  min-width: 0;
+  padding-bottom: 0.35rem;
+}
+
+.weather-city-label {
+  color: var(--atlas-ink);
+  display: block;
+  font-size: 14px;
+  font-weight: 550;
+  margin-bottom: 0.25rem;
+}
+
+.weather-city-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.weather-city-row input {
+  flex: 1 1 10rem;
+  min-height: 44px;
+  min-width: 0;
+}
+
+.weather-units {
+  display: flex;
+  gap: 0.15rem;
+}
+
+.weather-units .btn-quiet {
+  min-width: 44px;
+}
+
+.weather-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.75rem;
+}
+
+.weather-attribution {
+  margin-top: 0.65rem;
+}
+
+.weather-attribution a {
+  color: var(--atlas-meta);
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+html.is-keyboard-open .weather-city-form {
+  padding-bottom: max(0.35rem, var(--atlas-keyboard-inset));
+}
+
 [data-atlas-main] {
   scroll-padding-bottom: var(--atlas-bottom-inset);
 }
